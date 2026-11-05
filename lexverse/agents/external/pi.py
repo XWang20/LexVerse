@@ -26,6 +26,7 @@ from lexverse.agents.model_connection import ModelConnectionSpec
 from lexverse.agents.external.base import (
     BaseInstalledAgent,
     CliFlag,
+    NonZeroAgentExitCodeError,
     with_prompt_template,
 )
 from lexverse.agents.external.node_install import nvm_node_install_snippet
@@ -53,6 +54,7 @@ class Pi(BaseInstalledAgent):
     SUPPORTS_RESUME: bool = True
 
     _OUTPUT_FILENAME = "pi.txt"
+    _CUSTOM_MODEL_KEY_ENV = "LEXVERSE_PI_API_KEY"
 
     CLI_FLAGS = [
         CliFlag(
@@ -121,7 +123,6 @@ class Pi(BaseInstalledAgent):
     def _build_custom_models_command(self, provider: str, model_id: str, environment: ExecutionEnvironment | None = None) -> str | None:
         """Configure $HOME/.pi/agent/models.json when OPENAI_BASE_URL is provided for a custom OpenAI-compatible server."""
         base_url = self._get_env("OPENAI_BASE_URL") or self._get_env("OPENAI_API_BASE") or self._get_env("LLM_BASE_URL")
-        api_key = self._get_env("OPENAI_API_KEY") or self._get_env("LLM_API_KEY") or "local-key"
         if not base_url:
             return None
         if environment is not None and getattr(environment.type(), "value", str(environment.type())) == "docker":
@@ -131,7 +132,8 @@ class Pi(BaseInstalledAgent):
                 provider: {
                     "baseUrl": base_url,
                     "api": "openai-completions",
-                    "apiKey": api_key,
+                    # Pi resolves model configuration values as environment variable names.
+                    "apiKey": self._CUSTOM_MODEL_KEY_ENV,
                     "models": [
                         {
                             "id": model_id,
@@ -143,7 +145,7 @@ class Pi(BaseInstalledAgent):
             }
         }
         escaped = shlex.quote(json.dumps(models_cfg, indent=2))
-        return f"mkdir -p $HOME/.pi/agent && echo {escaped} > $HOME/.pi/agent/models.json"
+        return f'mkdir -p "$HOME/.pi/agent" && printf "%s\\n" {escaped} > "$HOME/.pi/agent/models.json"'
 
     @override
     @with_prompt_template
@@ -219,7 +221,15 @@ class Pi(BaseInstalledAgent):
 
         models_command = self._build_custom_models_command(provider, model_id, environment)
         if models_command:
-            await self.exec_as_agent(environment, command=models_command, env=env)
+            env[self._CUSTOM_MODEL_KEY_ENV] = self._get_env("OPENAI_API_KEY") or self._get_env("LLM_API_KEY") or "local-key"
+            try:
+                # The configuration step must not persist output or include it in errors.
+                result = await self.exec_as_agent(environment, command=models_command, env=env,
+                                                  log_output=False, check=False)
+            except Exception:
+                result = None
+            if result is None or result.return_code != 0:
+                raise NonZeroAgentExitCodeError("Failed to configure Pi custom model")
 
         await self.exec_as_agent(
             environment,
