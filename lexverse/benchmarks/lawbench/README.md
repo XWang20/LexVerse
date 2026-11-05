@@ -29,91 +29,69 @@ To assist reliably in Chinese legal practice, a large language model must progre
 ```bash
 python -m pip install -e ".[lawbench,openai,test]"
 lexverse task catalog lawbench
+# Required for vanilla runs
+lexverse setup
 ```
+
+Vanilla runs also require a working Docker daemon and a model service that supports tool calling.
 
 ### 2.2 Configuration
 
-Copy `configs/jobs/lawbench.yaml` to `configs/jobs/lawbench.local.yaml`:
+Copy `configs/jobs/lawbench.yaml` to `configs/jobs/lawbench.local.yaml` and replace its contents with the example below. Configure the `tested` profile in `configs/secrets.local.yaml` for an OpenAI-compatible service serving `Qwen/Qwen3-4B-Instruct-2507`.
 
 ```yaml
 schema_version: '1.0'
 benchmark:
   name: lawbench
   shot: zero_shot
-  tasks:
-  - id: 1-1
-    limit: null
-  - id: 1-2
-    limit: null
-  - id: 2-1
-    limit: null
-  - id: 2-2
-    limit: null
-  - id: 2-3
-    limit: null
-  - id: 2-4
-    limit: null
-  - id: 2-5
-    limit: null
-  - id: 2-6
-    limit: null
-  - id: 2-7
-    limit: null
-  - id: 2-8
-    limit: null
-  - id: 2-9
-    limit: null
-  - id: 2-10
-    limit: null
-  - id: 3-1
-    limit: null
-  - id: 3-2
-    limit: null
-  - id: 3-3
-    limit: null
-  - id: 3-4
-    limit: null
-  - id: 3-5
-    limit: null
-  - id: 3-6
-    limit: null
-  - id: 3-7
-    limit: null
-  - id: 3-8
-    limit: null
-models:
-  default:
-    provider: vllm
-    name: Qwen/Qwen-7B-Chat
-    load_parameters:
-      dtype: float16
-      tensor_parallel_size: 1
-      max_model_len: 8192
-      trust_remote_code: true
-    input:
-      format: chat
-    generation_parameters:
-      temperature: 0
-      max_tokens: 512
-generation: {}
+  default_limit: 20  # first 20 items per task; remove for the full selection
 agents:
 - name: static
-concurrency: 32
+models:
+  default:
+    provider: openai_compatible
+    profile: tested
+    name: Qwen/Qwen3-4B-Instruct-2507
+    generation_parameters:
+      temperature: 0
+      max_tokens: 2048
+environment:
+  type: docker
+generation:
+  context_window_tokens: 65536
+concurrency: 4
 ```
+
+Without `benchmark.tasks`, all task types are selected. `default_limit` selects the first items in dataset order; it is a smoke test, not a random sample. Remove the limit for a full run. Each Job contains individual Trials, their answers and trajectories, and a verification report. The native report can exclude failed or unscored Trials; report scored and expected counts and apply an explicit failure policy when comparing Jobs.
+
+For a capability-augmented run, copy this file to `configs/jobs/lawbench-cap.local.yaml`, set `agents: [{name: vanilla}]`, and download the resources first. For example, after `lexverse resources download indexes --collections legal_laws`, add:
+
+```yaml
+resources:
+  knowledge:
+  - collection:legal_laws
+  # skills: list the directories containing SKILL.md, relative to this YAML
+```
+
+Hybrid retrieval also requires the `BAAI/bge-small-zh-v1.5` embedding model to be reachable or cached. To use skills, run `lexverse resources download skills`, then add each directory containing a `SKILL.md` under `resources.skills`; paths are relative to the YAML file. Select collections and skills for the experiment and check for overlap with evaluation data. Resource settings apply to agent runs, so keep the static configuration resource-free. See the [project README](../../../README.md) for resource preparation and [Job configuration](../../../configs/jobs/README.md) for path resolution.
 
 ### 2.3 Execution Commands
 
 ```bash
-# Preflight check
-lexverse run -b lawbench -c configs/jobs/lawbench.local.yaml --dry-run
+# Preview and run the resource-free static Job
+lexverse run -c configs/jobs/lawbench.local.yaml --dry-run
+lexverse run -c configs/jobs/lawbench.local.yaml --output-dir runs/lawbench-static
 
-# Run full 10,000-sample evaluation
-lexverse run -b lawbench -c configs/jobs/lawbench.local.yaml --output-dir runs/lawbench-qwen7b-full
+# Run the same resource-free configuration with vanilla in Docker
+lexverse run -c configs/jobs/lawbench.local.yaml --agents vanilla --environment docker --output-dir runs/lawbench-vanilla
 
-# Resume, re-evaluate, or rebuild summary tables
-lexverse job resume runs/lawbench-qwen7b-full
-lexverse job verify runs/lawbench-qwen7b-full
-lexverse job report runs/lawbench-qwen7b-full
+# Run the separately configured capability-augmented Job
+lexverse run -c configs/jobs/lawbench-cap.local.yaml --output-dir runs/lawbench-vanilla-cap
+
+# Resume, re-evaluate, or rebuild the Job report
+lexverse job resume runs/lawbench-vanilla-cap
+lexverse job verify runs/lawbench-vanilla-cap
+lexverse job report runs/lawbench-vanilla-cap
 ```
 
 ---
@@ -135,6 +113,8 @@ LexVerse executes the native `evaluation/evaluation_functions/*.py` modules from
 ---
 
 ## 4. Reference Results (`lexverse run`) & Implementation Notes
+
+The reference tables in this section use `Qwen/Qwen-7B-Chat`. The full-data three-arm validation described in Section 5 uses `Qwen/Qwen3.8-27B` and must be reported separately.
 
 The tables below report the full **10,000-sample (20 tasks × 500 samples)** zero-shot evaluation of the open-source model **`Qwen/Qwen-7B-Chat`** (run locally via `vllm` on an NVIDIA A100 GPU), alongside the reference numbers from the LawBench paper ([arXiv:2309.16289](https://arxiv.org/abs/2309.16289), all scores in `%`):
 
@@ -181,3 +161,15 @@ The tables below report the full **10,000-sample (20 tasks × 500 samples)** zer
   1. **System Message vs. Bare `user` Turn**: Inspecting `origin_prompt` in upstream's `predictions/zero_shot/qwen-7b-chat-hf/*.json` shows that OpenCompass constructed a bare single-turn template (`"\n<|im_start|>user\n...\n<|im_end|>\n<|im_start|>assistant\n"`) without the `<|im_start|>system\nYou are a helpful assistant.<|im_end|>` header used by `Qwen-7B-Chat`'s official `make_context()` (`modeling_qwen.py`) and by LexVerse (`lexverse/providers/local.py:encode`).
   2. **Interaction with `2-6` (`xxcq.py`) Delimiter Parsing**: With the standard system prompt, `Qwen-7B-Chat` formats extracted entities one per line (`\n`), whereas without the system prompt it frequently joins all 10 entity types on a single line with full-width semicolons (`；`). Because upstream `evaluation/utils/comprehension_scores.py:__extract_entities_pred` splits each entity value only on `\n` or ASCII space (`re.split("\n| ", ...)`), semicolon-joined lines cause the parser to swallow the remaining string into a single entity value, explaining why `2-6` rises from `51.83` to `66.69` under standard ChatML formatting.
   3. **HuggingFace `generation_config.json` Defaults**: In addition, the official `Qwen/Qwen-7B-Chat` checkpoint's `generation_config.json` sets `repetition_penalty: 1.1` by default; even when OpenCompass enabled greedy decoding (`do_sample=False`), `transformers.GenerationMixin.generate()` still applies `RepetitionPenaltyLogitsProcessor(1.1)` unless `repetition_penalty=1.0` is explicitly overridden, whereas `vllm` with `generation_config="vllm"` uses pure unpenalized greedy decoding (`repetition_penalty=1.0`).
+
+## 5. Full-Data Three-Arm Validation (2026-11-05)
+
+This validation covers `static`, resource-free `vanilla`, and `vanilla` with knowledge and skills. The tested model is **`Qwen/Qwen3.8-27B`**, with `temperature: 0`, `max_tokens: 8192`, and `chat_template_kwargs.enable_thinking: false`. Static calls the model service directly; the two vanilla arms use a compatibility bridge that restores tool calls from the service's output. Vanilla runs use the Local environment, with context windows of 32,768 tokens without resources and 65,536 with resources. The augmented arm uses the same 13 knowledge indexes and 38 skills as the preceding pilot. The corrected validation configuration uses 8 model calls (including summary and final-answer calls), 16 tool calls, and 900 seconds of active execution per trial. The aggregate generation budgets are 16 concurrent static trials, 8 resource-free vanilla trials, and 8 augmented vanilla trials. Generation and scoring are independently scheduled: after PLawBench generation, LawBench and LexEval generation can run together, splitting each arm's budget into 8/4/4 trials per Job. PLawBench scoring uses concurrency 4 per Job, with up to two scoring Jobs in parallel; deterministic native scoring has its own queue. A completed generation Job does not wait for its scoring before later benchmarks start. The initial unguarded 30-call and 8-call batches are retained as separate diagnostics. Corrected Jobs use a new frozen source snapshot and do not merge earlier answers into their scores.
+
+Both vanilla benchmark arms use the same budget-aware answering controller. For knowledge-augmented runs, successful identical searches are cached within each trial, and two consecutive cache hits with no new tool result end retrieval. Approaching the model/tool budget or time limit also starts a separate answering request using the original task messages and deduplicated evidence, without the prior tool-action history or available tools. Space is kept for a possible summary and the final-answer call. This adds a final-answer instruction; the original task and shared system preamble are unchanged. Invalid or empty final answers remain failures. Execution completion is not a claim of legal correctness.
+
+The source and configuration are frozen for all three arms. Task prompts and the shared system preamble are unchanged in this validation; the current knowledge-tool descriptions include readable source names. Run manifests retain source/configuration hashes and the exact selected resources. This is an engineering validation of the current setup; resource overlap with the evaluation data has not been independently ruled out.
+
+**Scope: all 10,000 items across 20 task types, zero-shot, in each arm. Judge model: none (native deterministic scoring).** This differs from PLawBench, whose rubric is graded by an LLM. The tested model also differs from the `Qwen/Qwen-7B-Chat` reference table in Section 4.
+
+The full-data run is in progress; no full-data score is claimed here. Report planned and completed executions, execution failures, scored items, and scoring failures together with each score. The earlier 20-case pilot is a separate diagnostic and must not be labeled as a full-data result. Any average over scored items must be accompanied by its denominator; failed or unscored items must not silently disappear from a comparison.

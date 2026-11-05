@@ -26,96 +26,68 @@ To evaluate legal large language models systematically across the full spectrum 
 ```bash
 python -m pip install -e ".[lexeval,openai,test]"
 lexverse task catalog lexeval
+# Required for vanilla runs
+lexverse setup
 ```
+
+Vanilla runs also require a working Docker daemon and a model service that supports tool calling.
 
 ### 2.2 Configuration
 
-Copy `configs/jobs/lexeval.yaml` to `configs/jobs/lexeval.local.yaml`:
+Copy `configs/jobs/lexeval.yaml` to `configs/jobs/lexeval.local.yaml` and replace its contents with the example below. Configure the `tested` profile in `configs/secrets.local.yaml` for an OpenAI-compatible service serving `Qwen/Qwen3-4B-Instruct-2507`.
 
 ```yaml
 schema_version: '1.0'
 benchmark:
   name: lexeval
-  tasks:
-  - id: '1_1'
-    limit: null
-  - id: '1_2'
-    limit: null
-  - id: '1_3'
-    limit: null
-  - id: '2_1'
-    limit: null
-  - id: '2_2'
-    limit: null
-  - id: '2_3'
-    limit: null
-  - id: '2_4'
-    limit: null
-  - id: '2_5'
-    limit: null
-  - id: '3_1'
-    limit: null
-  - id: '3_2'
-    limit: null
-  - id: '3_3'
-    limit: null
-  - id: '3_4'
-    limit: null
-  - id: '3_5'
-    limit: null
-  - id: '3_6'
-    limit: null
-  - id: '4_1'
-    limit: null
-  - id: '4_2'
-    limit: null
-  - id: '5_1'
-    limit: null
-  - id: '5_2'
-    limit: null
-  - id: '5_3'
-    limit: null
-  - id: '5_4'
-    limit: null
-  - id: '6_1'
-    limit: null
-  - id: '6_2'
-    limit: null
-  - id: '6_3'
-    limit: null
-models:
-  default:
-    provider: vllm
-    name: Qwen/Qwen-7B-Chat
-    load_parameters:
-      dtype: float16
-      tensor_parallel_size: 1
-      max_model_len: 8192
-      trust_remote_code: true
-    input:
-      format: chat
-    generation_parameters:
-      temperature: 0
-      max_tokens: 512
-generation: {}
+  default_limit: 20  # first 20 items per task; remove for the full selection
 agents:
 - name: static
-concurrency: 32
+models:
+  default:
+    provider: openai_compatible
+    profile: tested
+    name: Qwen/Qwen3-4B-Instruct-2507
+    generation_parameters:
+      temperature: 0
+      max_tokens: 2048
+environment:
+  type: docker
+generation:
+  context_window_tokens: 65536
+concurrency: 4
 ```
+
+Without `benchmark.tasks`, all task types are selected. `default_limit` selects the first items in dataset order; it is a smoke test, not a random sample. Remove the limit for a full run. Each Job contains individual Trials, their answers and trajectories, and a verification report. The native report can exclude failed or unscored Trials; report scored and expected counts and apply an explicit failure policy when comparing Jobs.
+
+For a capability-augmented run, copy this file to `configs/jobs/lexeval-cap.local.yaml`, set `agents: [{name: vanilla}]`, and download the resources first. For example, after `lexverse resources download indexes --collections legal_laws`, add:
+
+```yaml
+resources:
+  knowledge:
+  - collection:legal_laws
+  # skills: list the directories containing SKILL.md, relative to this YAML
+```
+
+Hybrid retrieval also requires the `BAAI/bge-small-zh-v1.5` embedding model to be reachable or cached. To use skills, run `lexverse resources download skills`, then add each directory containing a `SKILL.md` under `resources.skills`; paths are relative to the YAML file. Select collections and skills for the experiment and check for overlap with evaluation data. Resource settings apply to agent runs, so keep the static configuration resource-free. See the [project README](../../../README.md) for resource preparation and [Job configuration](../../../configs/jobs/README.md) for path resolution.
 
 ### 2.3 Execution Commands
 
 ```bash
-# Preflight check
-lexverse run -b lexeval -c configs/jobs/lexeval.local.yaml --dry-run
+# Preview and run the resource-free static Job
+lexverse run -c configs/jobs/lexeval.local.yaml --dry-run
+lexverse run -c configs/jobs/lexeval.local.yaml --output-dir runs/lexeval-static
 
-# Run full 14,150-sample evaluation
-lexverse run -b lexeval -c configs/jobs/lexeval.local.yaml --output-dir runs/lexeval-qwen7b-full
+# Run the same resource-free configuration with vanilla in Docker
+lexverse run -c configs/jobs/lexeval.local.yaml --agents vanilla --environment docker --output-dir runs/lexeval-vanilla
 
-# Resume, re-evaluate, or rebuild summary tables
-lexverse job resume runs/lexeval-qwen7b-full
-lexverse job verify runs/lexeval-qwen7b-full
-lexverse job report runs/lexeval-qwen7b-full
+# Run the separately configured capability-augmented Job
+lexverse run -c configs/jobs/lexeval-cap.local.yaml --output-dir runs/lexeval-vanilla-cap
+
+# Resume, re-evaluate, or rebuild the Job report
+lexverse job resume runs/lexeval-vanilla-cap
+lexverse job verify runs/lexeval-vanilla-cap
+lexverse job report runs/lexeval-vanilla-cap
 ```
 
 ---
@@ -134,6 +106,8 @@ LexVerse executes the native `code/evaluation/evaluate.py` evaluator and `code/g
 ---
 
 ## 4. Reference Results (`lexverse run`) & Implementation Notes
+
+The reference tables in this section use `Qwen/Qwen-7B-Chat`. The full-data three-arm validation described in Section 5 uses `Qwen/Qwen3.8-27B` and must be reported separately.
 
 The tables below report the full **14,150-sample (23 tasks)** zero-shot evaluation of the open-source model **`Qwen/Qwen-7B-Chat`** (run locally via `vllm` on an NVIDIA A100 GPU), alongside the reference numbers from Table 3 of the LexEval paper ([arXiv:2409.20288](https://arxiv.org/abs/2409.20288), all scores in `%`):
 
@@ -179,3 +153,15 @@ The tables below report the full **14,150-sample (23 tasks)** zero-shot evaluati
 
 - **Full-Dataset Reproduction (`45.26` vs. `45.17`, `+0.09` Overall Difference)**: Across all 14,150 questions in the 23 LexEval tasks, `python -m lexverse run lexeval` with `Qwen/Qwen-7B-Chat` matches the upstream `Qwen_7B_chat` reference outputs within `0.09–0.33` points on all five multiple-choice categories (`Memorization: 23.18 vs. 23.37`, `Understanding: 74.19 vs. 73.86`, `Logic Inference: 53.74 vs. 53.63`, `Discrimination: 24.50 vs. 24.80`, `Ethics: 39.37 vs. 39.27`) and achieves `+0.09` overall macro-average parity (`45.26` vs. `45.17`).
 - **Context Window Handling (`max_model_len: 8192`)**: In upstream `code/generation/Qwen_gen.py`, prompts exceeding `max_Length = 3500` characters are middle-truncated (`half = int(max_Length / 2)`). In LexVerse, `LocalBackend` applies token-level head+tail middle truncation only when a prompt plus `max_tokens` exceeds the 8,192-token model context window (`11` ultra-long case documents in `3_2`, `4_1`, and `5_4`), preserving full case context on `99.92%` of the benchmark.
+
+## 5. Full-Data Three-Arm Validation (2026-11-05)
+
+This validation covers `static`, resource-free `vanilla`, and `vanilla` with knowledge and skills. The tested model is **`Qwen/Qwen3.8-27B`**, with `temperature: 0`, `max_tokens: 8192`, and `chat_template_kwargs.enable_thinking: false`. Static calls the model service directly; the two vanilla arms use a compatibility bridge that restores tool calls from the service's output. Vanilla runs use the Local environment, with context windows of 32,768 tokens without resources and 65,536 with resources. The augmented arm uses the same 13 knowledge indexes and 38 skills as the preceding pilot. The corrected validation configuration uses 8 model calls (including summary and final-answer calls), 16 tool calls, and 900 seconds of active execution per trial. The aggregate generation budgets are 16 concurrent static trials, 8 resource-free vanilla trials, and 8 augmented vanilla trials. Generation and scoring are independently scheduled: after PLawBench generation, LawBench and LexEval generation can run together, splitting each arm's budget into 8/4/4 trials per Job. PLawBench scoring uses concurrency 4 per Job, with up to two scoring Jobs in parallel; deterministic native scoring has its own queue. A completed generation Job does not wait for its scoring before later benchmarks start. The initial unguarded 30-call and 8-call batches are retained as separate diagnostics. Corrected Jobs use a new frozen source snapshot and do not merge earlier answers into their scores.
+
+Both vanilla benchmark arms use the same budget-aware answering controller. For knowledge-augmented runs, successful identical searches are cached within each trial, and two consecutive cache hits with no new tool result end retrieval. Approaching the model/tool budget or time limit also starts a separate answering request using the original task messages and deduplicated evidence, without the prior tool-action history or available tools. Space is kept for a possible summary and the final-answer call. This adds a final-answer instruction; the original task and shared system preamble are unchanged. Invalid or empty final answers remain failures. Execution completion is not a claim of legal correctness.
+
+The source and configuration are frozen for all three arms. Task prompts and the shared system preamble are unchanged in this validation; the current knowledge-tool descriptions include readable source names. Run manifests retain source/configuration hashes and the exact selected resources. This is an engineering validation of the current setup; resource overlap with the evaluation data has not been independently ruled out.
+
+**Scope: all 14,150 items across 23 task types, zero-shot, in each arm. Judge model: none (native deterministic scoring).** Accuracy and ROUGE-L are computed by the native scorer. This differs from PLawBench, whose rubric is graded by an LLM. The tested model also differs from the `Qwen/Qwen-7B-Chat` reference table in Section 4.
+
+The full-data run is in progress; no full-data score is claimed here. Report planned and completed executions, execution failures, scored items, and scoring failures together with each score. The earlier 20-case pilot is a separate diagnostic and must not be labeled as a full-data result. Any average over scored items must be accompanied by its denominator; failed or unscored items must not silently disappear from a comparison.

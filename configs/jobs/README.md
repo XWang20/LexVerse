@@ -42,6 +42,10 @@ Automatic lookup is relative to the current directory. Files are never merged; o
 
 Prepare the selected model connections, datasets and execution dependencies before running. See the [project README](../../README.md) for setup.
 
+### Reporting tested and judge models
+
+For every result table, state the tested model and the judge model explicitly, including the exact configured model identifiers and generation parameters. If the judge differs from a preceding reference table, name both judges and say that the scores are not directly comparable. LawBench and LexEval use deterministic native scorers: report `Judge model: none (native deterministic scoring)` rather than assigning them the PLawBench judge. Report planned, execution-completed, scored, execution-failed, and scoring-failed counts alongside scores; an average over scored items is conditional on successful scoring.
+
 ## Personal configuration
 
 ```bash

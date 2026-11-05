@@ -28,15 +28,15 @@ In practical legal work, an assistant must handle three distinct tasks across a 
 ```bash
 python -m pip install -e ".[plawbench,openai,test]"
 lexverse task catalog plawbench
+# Required for vanilla runs
+lexverse setup
 ```
+
+Vanilla runs also require a working Docker daemon and a model service that supports tool calling.
 
 ### 2.2 Configuration
 
-A PLawBench run binds two models:
-1. **Candidate Model (`models.default`)**: Generates the single-turn consultation questions, case analysis, or legal document.
-2. **Rubric Evaluator (`models.verifiers[0]`)**: Grades the candidate output against the expert rubric in `prompt_zh.py`.
-
-Copy `configs/jobs/plawbench.yaml` to `configs/jobs/plawbench.local.yaml`:
+Copy `configs/jobs/plawbench.yaml` to `configs/jobs/plawbench.local.yaml` and replace its contents with the example below. Configure the `tested` profile in `configs/secrets.local.yaml` for an OpenAI-compatible service serving `Qwen/Qwen3-4B-Instruct-2507`. PLawBench also needs a separate `judge` profile pointing to the scoring service. Judge choice affects scores; the `gpt-5.2` reference results below cannot be directly compared with this example.
 
 ```yaml
 schema_version: '1.0'
@@ -44,53 +44,65 @@ benchmark:
   name: plawbench
   tasks:
   - id: case_analysis
-    limit: 30
   - id: legal_consultation
-    limit: null
-  - id: document_generation
-    limit: null
+  default_limit: 20  # first 20 items per task; remove for the full selection
+agents:
+- name: static
 models:
   default:
-    provider: vllm
+    provider: openai_compatible
+    profile: tested
     name: Qwen/Qwen3-4B-Instruct-2507
-    load_parameters:
-      dtype: bfloat16
-      tensor_parallel_size: 1
-      max_model_len: 32768
-      trust_remote_code: false
-    input:
-      format: chat
     generation_parameters:
       temperature: 0
       max_tokens: 8192
   verifiers:
   - provider: openai_compatible
-    profile: openai
-    name: gpt-5.2-2025-12-11
+    profile: judge
+    name: Qwen/Qwen3.8-27B
     generation_parameters:
-      max_completion_tokens: 8192
-generation: {}
-agents:
-- name: static
+      temperature: 0
+      max_tokens: 16384
 verification:
-  concurrency: 8
+  concurrency: 4
   max_attempts: 3
-concurrency: 16
+environment:
+  type: docker
+generation:
+  context_window_tokens: 65536
+concurrency: 4
 ```
+
+Without `benchmark.tasks`, all task types are selected. `default_limit` selects the first items in dataset order; it is a smoke test, not a random sample. The example selects case analysis and consultation. To evaluate document generation separately, replace `benchmark.tasks` with just `document_generation`; the selected Qwen judge has produced inconsistent document-generation totals, so those results need independent validation. Remove the limit for a full run. Each Job contains individual Trials, their answers and trajectories, and a verification report. The native report can exclude failed or unscored Trials; report scored and expected counts and apply an explicit failure policy when comparing Jobs.
+
+For a capability-augmented run, copy this file to `configs/jobs/plawbench-cap.local.yaml`, set `agents: [{name: vanilla}]`, and download the resources first. For example, after `lexverse resources download indexes --collections legal_laws`, add:
+
+```yaml
+resources:
+  knowledge:
+  - collection:legal_laws
+  # skills: list the directories containing SKILL.md, relative to this YAML
+```
+
+Hybrid retrieval also requires the `BAAI/bge-small-zh-v1.5` embedding model to be reachable or cached. To use skills, run `lexverse resources download skills`, then add each directory containing a `SKILL.md` under `resources.skills`; paths are relative to the YAML file. Select collections and skills for the experiment and check for overlap with evaluation data. Resource settings apply to agent runs, so keep the static configuration resource-free. See the [project README](../../../README.md) for resource preparation and [Job configuration](../../../configs/jobs/README.md) for path resolution.
 
 ### 2.3 Execution Commands
 
 ```bash
-# Preflight check
-lexverse run -b plawbench -c configs/jobs/plawbench.local.yaml --dry-run
+# Preview and run the resource-free static Job
+lexverse run -c configs/jobs/plawbench.local.yaml --dry-run
+lexverse run -c configs/jobs/plawbench.local.yaml --output-dir runs/plawbench-static
 
-# Run generation and rubric evaluation
-lexverse run -b plawbench -c configs/jobs/plawbench.local.yaml --output-dir runs/plawbench-experiment
+# Run the same resource-free configuration with vanilla in Docker
+lexverse run -c configs/jobs/plawbench.local.yaml --agents vanilla --environment docker --output-dir runs/plawbench-vanilla
 
-# Resume, re-evaluate, or rebuild summary tables
-lexverse job resume runs/plawbench-experiment
-lexverse job verify runs/plawbench-experiment
-lexverse job report runs/plawbench-experiment
+# Run the separately configured capability-augmented Job
+lexverse run -c configs/jobs/plawbench-cap.local.yaml --output-dir runs/plawbench-vanilla-cap
+
+# Resume, re-evaluate, or rebuild the Job report
+lexverse job resume runs/plawbench-vanilla-cap
+lexverse job verify runs/plawbench-vanilla-cap
+lexverse job report runs/plawbench-vanilla-cap
 ```
 
 ---
@@ -110,6 +122,8 @@ When inspecting the public [`SKYLENAGE-AI/PLawBench`](https://github.com/SKYLENA
 
 ## 4. Reference Results (`lexverse run`) & Implementation Notes
 
+**Judge for the reference table: `gpt-5.2`. Judge for the full-data three-arm validation in Section 5: `Qwen/Qwen3.8-27B`.** The judge models differ, so their scores must be reported separately and cannot establish a directly comparable capability ranking.
+
 The table below compares the scores obtained directly by running `python -m lexverse run plawbench` on two open-weight models from the official PLawBench leaderboard—**`Qwen/Qwen3-4B-Instruct-2507`** and **`Qwen/Qwen3-4B-Thinking-2507`** (run locally via `vllm` on an NVIDIA A100 GPU, evaluated with `gpt-5.2`)—against the official README ranking table (all scores in `%`):
 
 | Model | Source | Overall | Task 2: Analysis (`acc`) | Task 2: Conclusion | Task 2: Facts | Task 2: Reasoning | Task 2: Statute | Task 1: Consultation (`acc`) | Task 3: Drafting (`acc`) | Task 3: Plaintiff | Task 3: Defendant |
@@ -124,3 +138,15 @@ The table below compares the scores obtained directly by running `python -m lexv
 
 - **Judge Model Selection (`gpt-5.2`)**: Because upstream `prompt_zh.py` leaves `call_llm_api()` unimplemented, the judge model must be configured via `models.verifiers[0]`. Using `gpt-5.2` as the rubric evaluator over all **280 public items** (`250` `case_analysis` + `18` `legal_consultation` + `12` `document_generation`) reproduces the paper's overall and sub-dimension scores closely (`52.34` vs. `50.53` overall for `Qwen3-4B-Instruct-2507`, and `45.10` vs. `44.80` overall for `Qwen3-4B-Thinking-2507`, preserving the exact relative ordering across all tasks and sub-dimensions).
 - **Public Consultation Split (`public_legal_consultation_18.json`)**: Upstream `prompt_generate.py` assigns `level = "mid"` to the first 50 items and `"hard"` thereafter; because the public repository releases 18 consultation items, all 18 items use the `legal_consultation_mid` prompt (10–25 questions).
+
+## 5. Full-Data Three-Arm Validation (2026-11-05)
+
+This validation covers `static`, resource-free `vanilla`, and `vanilla` with knowledge and skills. The tested model is **`Qwen/Qwen3.8-27B`**, with `temperature: 0`, `max_tokens: 8192`, and `chat_template_kwargs.enable_thinking: false`. Static calls the model service directly; the two vanilla arms use a compatibility bridge that restores tool calls from the service's output. Vanilla runs use the Local environment, with context windows of 32,768 tokens without resources and 65,536 with resources. The augmented arm uses the same 13 knowledge indexes and 38 skills as the preceding pilot. The corrected validation configuration uses 8 model calls (including summary and final-answer calls), 16 tool calls, and 900 seconds of active execution per trial. The aggregate generation budgets are 16 concurrent static trials, 8 resource-free vanilla trials, and 8 augmented vanilla trials. Generation and scoring are independently scheduled: after PLawBench generation, LawBench and LexEval generation can run together, splitting each arm's budget into 8/4/4 trials per Job. PLawBench scoring uses concurrency 4 per Job, with up to two scoring Jobs in parallel; deterministic native scoring has its own queue. A completed generation Job does not wait for its scoring before later benchmarks start. The initial unguarded 30-call and 8-call batches are retained as separate diagnostics. Corrected Jobs use a new frozen source snapshot and do not merge earlier answers into their scores.
+
+Both vanilla benchmark arms use the same budget-aware answering controller. For knowledge-augmented runs, successful identical searches are cached within each trial, and two consecutive cache hits with no new tool result end retrieval. Approaching the model/tool budget or time limit also starts a separate answering request using the original task messages and deduplicated evidence, without the prior tool-action history or available tools. Space is kept for a possible summary and the final-answer call. This adds a final-answer instruction; the original task and shared system preamble are unchanged. Invalid or empty final answers remain failures. Execution completion is not a claim of legal correctness.
+
+The source and configuration are frozen for all three arms. Task prompts and the shared system preamble are unchanged in this validation; the current knowledge-tool descriptions include readable source names. Run manifests retain source/configuration hashes and the exact selected resources. This is an engineering validation of the current setup; resource overlap with the evaluation data has not been independently ruled out.
+
+**Scope: all 280 public items (250 case analysis, 18 legal consultation, and 12 document generation), in each arm. Judge model: `Qwen/Qwen3.8-27B`, with `temperature: 0`, `max_tokens: 16384`, and `verification.max_attempts: 3`. Judge thinking is not explicitly disabled; it follows the service default. Scoring concurrency is 4.** This judge differs from the **`gpt-5.2` judge used in Section 4**, so these scores are not directly comparable with that reference table. The tested model and judge are both 27B here; self-grading bias and malformed or arithmetically inconsistent judge output are recorded as limitations, not silently corrected.
+
+The full-data run is in progress; no full-data score is claimed here. Report planned and completed executions, execution failures, scored items, and scoring failures together with each score. The earlier 20-case pilot is a separate diagnostic and must not be labeled as a full-data result. Any average over scored items must be accompanied by its denominator; failed or unscored items must not silently disappear from a comparison.
