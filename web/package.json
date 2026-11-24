@@ -1,0 +1,36 @@
+{
+  "name": "lexverse-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "export-data": "bun run scripts/export-static-data.ts",
+    "dev": "LEXVERSE_WEB_MODE=serve bun run scripts/export-static-data.ts && bun run scripts/prepare-mode.ts && LEXVERSE_WEB_MODE=serve next dev --port 3456",
+    "build": "LEXVERSE_WEB_MODE=serve bun run scripts/export-static-data.ts && bun run scripts/prepare-mode.ts && LEXVERSE_WEB_MODE=serve next build",
+    "build:static": "STATIC_EXPORT=1 LEXVERSE_WEB_MODE=static bun run scripts/export-static-data.ts && bun run scripts/prepare-mode.ts --static && (STATIC_EXPORT=1 LEXVERSE_WEB_MODE=static next build; code=$?; bun run scripts/prepare-mode.ts; exit $code)",
+    "build:pages": "NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH:-/LexVerse} bun run build:static",
+    "start": "next start --port 3456"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.5.0",
+    "@remixicon/react": "^4.9.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "js-yaml": "^5.5.0",
+    "motion": "^14.14.0",
+    "next": "15.3.1",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "recharts": "^3.11.0",
+    "tailwind-merge": "^3.7.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/bun": "^1.4.5",
+    "@types/js-yaml": "^4.0.9",
+    "@types/react": "19.1.2",
+    "@types/react-dom": "19.1.2",
+    "postcss": "^8.5.33",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.9.3"
+  }
+}

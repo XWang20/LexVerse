@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+}
+
+:root {
+  color-scheme: light dark;
+  --background: #ffffff;
+  --foreground: #09090b;
+  --border: #e4e4e7;
+  --chart-bar-muted: #e4e4e7;
+  --chart-grid: rgba(113, 113, 122, 0.14);
+  --color-1: hsl(0 100% 63%);
+  --color-2: hsl(270 100% 63%);
+  --color-3: hsl(210 100% 63%);
+  --color-4: hsl(195 100% 63%);
+  --color-5: hsl(90 100% 63%);
+  --primary-foreground: #ffffff;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --border: #27272a;
+  --chart-bar-muted: #27272a;
+  --chart-grid: rgba(161, 161, 170, 0.12);
+  --primary-foreground: #09090b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@keyframes rainbow {
+  0% {
+    background-position: 0%;
+  }
+  100% {
+    background-position: 200%;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes shiny-text {
+  0%, 90%, 100% {
+    background-position: calc(-100% - var(--shiny-width, 100px)) 0;
+  }
+  30%, 60% {
+    background-position: calc(100% + var(--shiny-width, 100px)) 0;
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+  }
+}
+
+@keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+  }
+}
+
+@keyframes shine {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  100% {
+    background-position: 0% 0%;
+  }
+}
+
+@keyframes gradient {
+  to {
+    background-position: var(--bg-size, 300%) 0;
+  }
+}
+
+.animate-rainbow {
+  animation: rainbow 4s infinite linear;
+}
+
+.animate-aurora {
+  animation: aurora 8s ease-in-out infinite;
+}
+
+.animate-shiny-text {
+  animation: shiny-text 6s infinite;
+}
+
+.animate-marquee {
+  animation: marquee var(--duration, 40s) infinite linear;
+}
+
+.animate-marquee-vertical {
+  animation: marquee-vertical var(--duration, 40s) infinite linear;
+}
+
+.animate-shine {
+  animation: shine var(--duration, 14s) infinite linear;
+}
+
+.animate-gradient {
+  animation: gradient 8s linear infinite;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
