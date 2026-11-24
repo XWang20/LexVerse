@@ -534,7 +534,7 @@ export function ExperimentComposerDrawer({
                 type="button"
                 onClick={handleValidateViaServer}
                 disabled={validating}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3.5 py-2 text-xs font-medium text-zinc-800 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
+                className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-medium cursor-pointer"
               >
                 <RiServerLine className="w-4 h-4 text-emerald-500" />
                 {validating ? "Validating via Python CLI..." : "Validate Config (--print-config)"}
@@ -542,7 +542,7 @@ export function ExperimentComposerDrawer({
               <button
                 type="button"
                 onClick={handleLaunch}
-                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 px-4 py-2 text-xs font-semibold shadow-sm cursor-pointer"
+                className="lv-btn-primary inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold cursor-pointer"
               >
                 <RiPlayCircleFill className="w-4 h-4" />
                 Launch Job in Local Daemon
@@ -560,7 +560,7 @@ export function ExperimentComposerDrawer({
               <button
                 type="button"
                 onClick={handleDownloadYaml}
-                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 dark:bg-white text-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-200 px-4 py-2 text-xs font-semibold shrink-0 cursor-pointer"
+                className="lv-btn-primary inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold shrink-0 cursor-pointer"
               >
                 <RiCheckDoubleLine className="w-4 h-4" />
                 Export <code className="font-mono">job.local.yaml</code>

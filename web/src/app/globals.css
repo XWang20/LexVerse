@@ -16,8 +16,19 @@
   --background: #ffffff;
   --foreground: #09090b;
   --border: #e4e4e7;
+  --surface-subtle: #f8fafc;
+  --surface-card: #ffffff;
+  --surface-elevated: #ffffff;
   --chart-bar-muted: #e4e4e7;
   --chart-grid: rgba(113, 113, 122, 0.14);
+  --ease-out: cubic-bezier(0, 0, 0.58, 1);
+  --ease-out-strong: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.42, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.42, 0, 0.58, 1);
+  --ease-overshoot: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-sm: 150ms;
+  --duration-md: 240ms;
+  --duration-lg: 380ms;
   --color-1: hsl(0 100% 63%);
   --color-2: hsl(270 100% 63%);
   --color-3: hsl(210 100% 63%);
@@ -30,6 +41,9 @@
   --background: #09090b;
   --foreground: #fafafa;
   --border: #27272a;
+  --surface-subtle: #111114;
+  --surface-card: #09090b;
+  --surface-elevated: #141418;
   --chart-bar-muted: #27272a;
   --chart-grid: rgba(161, 161, 170, 0.12);
   --primary-foreground: #09090b;
@@ -135,4 +149,342 @@ html {
 
 body {
   -webkit-font-smoothing: antialiased;
+}
+
+/* ==================== TIP 007: MIXED CJK / ENGLISH TYPOGRAPHY ==================== */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+table td, table th {
+  font-variant-numeric: tabular-nums;
+}
+
+:lang(zh) :where(p, li, dd, blockquote, h1, h2, h3, h4, span, div) {
+  text-autospace: normal;
+  text-spacing-trim: trim-start;
+}
+
+code, pre, kbd, input, textarea {
+  text-autospace: no-autospace;
+  text-spacing-trim: normal;
+}
+
+/* ==================== TIP 004: CONTINUOUS CORNERS ==================== */
+@supports (corner-shape: superellipse(1.25)) {
+  :where(.rounded-lg, .rounded-xl, .rounded-2xl, .rounded-3xl) {
+    corner-shape: superellipse(1.25);
+  }
+  :where(.rounded-full) {
+    corner-shape: round;
+  }
+}
+
+/* ==================== TIP 001: TACTILE SKEUOMORPHIC BUTTONS ==================== */
+.lv-btn-primary,
+.lv-btn-secondary,
+.lv-btn-tertiary {
+  white-space: nowrap;
+  transition:
+    transform 120ms var(--ease-out-strong),
+    box-shadow 140ms var(--ease-out),
+    background 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+
+.lv-btn-primary {
+  background: linear-gradient(180deg, #323946 0%, #171a21 100%);
+  color: #ffffff;
+  border: 1px solid #101319;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(15, 23, 42, 0.18),
+    0 4px 10px -3px rgba(15, 23, 42, 0.26);
+}
+
+.lv-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #3c4454 0%, #1f242d 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(15, 23, 42, 0.2),
+    0 8px 16px -5px rgba(15, 23, 42, 0.3);
+}
+
+.lv-btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #171a21 0%, #2b313c 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.42),
+    inset 0 0 0 transparent,
+    inset 0 0 0 transparent,
+    0 1px 1px rgba(15, 23, 42, 0.16),
+    0 0 0 transparent;
+}
+
+.dark .lv-btn-primary {
+  background: linear-gradient(180deg, #ffffff 0%, #eceef2 100%);
+  color: #09090b;
+  border-color: #d4d4d8;
+  text-shadow: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 4px 10px -3px rgba(0, 0, 0, 0.45);
+}
+
+.dark .lv-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f5f7 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.08),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 8px 16px -5px rgba(0, 0, 0, 0.5);
+}
+
+.dark .lv-btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #e4e4e7 0%, #f4f4f5 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 transparent,
+    inset 0 0 0 transparent,
+    0 1px 1px rgba(0, 0, 0, 0.25),
+    0 0 0 transparent;
+}
+
+.lv-btn-secondary {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f5f7 100%);
+  color: #18181b;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 3px 8px -3px rgba(15, 23, 42, 0.08);
+}
+
+.lv-btn-secondary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border-color: rgba(15, 23, 42, 0.2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(15, 23, 42, 0.07),
+    0 6px 12px -4px rgba(15, 23, 42, 0.12);
+}
+
+.lv-btn-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #eceef2 0%, #f7f8fa 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(15, 23, 42, 0.12),
+    inset 0 0 0 transparent,
+    inset 0 0 0 transparent,
+    0 1px 0 rgba(255, 255, 255, 0.85),
+    0 0 0 transparent;
+}
+
+.dark .lv-btn-secondary {
+  background: linear-gradient(180deg, #23262e 0%, #181a20 100%);
+  color: #f4f4f5;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(0, 0, 0, 0.35),
+    0 3px 8px -3px rgba(0, 0, 0, 0.45);
+}
+
+.dark .lv-btn-secondary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #2a2e38 0%, #1d2027 100%);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.dark .lv-btn-secondary:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #16181d 0%, #20232a 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 transparent,
+    inset 0 0 0 transparent,
+    0 1px 1px rgba(0, 0, 0, 0.3),
+    0 0 0 transparent;
+}
+
+.lv-btn-tertiary {
+  background: linear-gradient(180deg, #f4f5f7 0%, #e8eaee 100%);
+  color: #27272a;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.04),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 2px 6px -2px rgba(15, 23, 42, 0.06);
+}
+
+.lv-btn-tertiary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #f9fafb 0%, #eef0f3 100%);
+  border-color: rgba(15, 23, 42, 0.16);
+}
+
+.lv-btn-tertiary:active:not(:disabled) {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #e5e7eb 0%, #f1f2f5 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(15, 23, 42, 0.12),
+    inset 0 0 0 transparent,
+    inset 0 0 0 transparent,
+    0 1px 0 rgba(255, 255, 255, 0.8),
+    0 0 0 transparent;
+}
+
+.dark .lv-btn-tertiary {
+  background: linear-gradient(180deg, #1c1e24 0%, #15171c 100%);
+  color: #e4e4e7;
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    inset 0 0 0 transparent,
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 2px 6px -2px rgba(0, 0, 0, 0.35);
+}
+
+.dark .lv-btn-tertiary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #242730 0%, #1a1d24 100%);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dark .lv-btn-tertiary:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* ==================== TIP 013 / 016 / 017 MICRO-EFFECTS ==================== */
+@keyframes lv-halo-sweep {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.75);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+.lv-cmd-halo {
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 55% 42% at 50% 24%,
+    rgba(16, 185, 129, 0.2) 0%,
+    rgba(99, 102, 241, 0.14) 45%,
+    transparent 78%
+  );
+  animation: lv-halo-sweep 750ms var(--ease-out) 1 forwards;
+}
+
+@keyframes lv-metal-spin {
+  0% {
+    opacity: 0;
+    transform: rotate(-60deg);
+  }
+  25% {
+    opacity: 0.75;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(300deg);
+  }
+}
+
+.lv-metal-border {
+  position: relative;
+}
+
+.lv-metal-border::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg 260deg,
+    rgba(16, 185, 129, 0.45) 305deg,
+    rgba(255, 255, 255, 0.85) 330deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: lv-metal-spin 900ms var(--ease-out) 1 forwards;
+}
+
+@keyframes lv-toast-sheen {
+  0% {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(220%) skewX(-20deg);
+  }
+}
+
+.lv-toast-sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: lv-toast-sheen 900ms var(--ease-out) 1 forwards;
+}
+
+.dark .lv-toast-sheen {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+}
+
+@keyframes lv-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.lv-skeleton {
+  background: linear-gradient(90deg, #f4f4f5 25%, #e4e4e7 50%, #f4f4f5 75%);
+  background-size: 200% 100%;
+  animation: lv-shimmer 1.6s linear infinite;
+}
+
+.dark .lv-skeleton {
+  background: linear-gradient(90deg, #18181b 25%, #27272a 50%, #18181b 75%);
+  background-size: 200% 100%;
+  animation: lv-shimmer 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lv-cmd-halo,
+  .lv-metal-border::before,
+  .lv-toast-sheen,
+  .lv-skeleton {
+    animation: none;
+  }
 }

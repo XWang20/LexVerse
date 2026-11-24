@@ -19,6 +19,7 @@ import {
   RiBarChartGroupedLine,
 } from "@remixicon/react";
 import { cn } from "@/lib/utils";
+import { SlidingPill } from "./magic-ui";
 import type { ResultsSummaryData } from "@/lib/storage-types";
 
 /**
@@ -102,34 +103,41 @@ export function MebiusAblationCard({
             </p>
           </>
         ) : (
-          <div className="py-6 text-xs font-mono text-zinc-400">
-            Scanning stored run reports…
+          <div className="space-y-2.5 py-4" aria-busy="true">
+            <div className="lv-skeleton h-8 w-28 rounded-lg" />
+            <div className="lv-skeleton h-3 w-48 rounded" />
           </div>
         )}
 
         {groups.length > 0 && (
           <div className="flex flex-wrap gap-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 p-1 mt-4 text-[11px] font-medium">
-            {groups.slice(0, 4).map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                onClick={() => setSelectedId(g.id)}
-                className={cn(
-                  "flex-1 py-1.5 px-2 rounded-xl transition cursor-pointer whitespace-nowrap",
-                  activeGroup?.id === g.id
-                    ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
-                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
-                )}
-              >
-                {g.id === "plawbench-weighted"
-                  ? "PLawBench"
-                  : g.id === "plawbench-macro"
-                  ? "PLaw Macro"
-                  : g.id === "lawbench-macro"
-                  ? "LawBench"
-                  : "Example"}
-              </button>
-            ))}
+            {groups.slice(0, 4).map((g) => {
+              const active = activeGroup?.id === g.id;
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setSelectedId(g.id)}
+                  className={cn(
+                    "relative flex-1 py-1.5 px-2 rounded-xl transition cursor-pointer whitespace-nowrap",
+                    active
+                      ? "text-zinc-950 dark:text-white font-semibold"
+                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                  )}
+                >
+                  {active && <SlidingPill layoutId="ablation-bench-pill" className="rounded-xl" />}
+                  <span className="relative z-10">
+                    {g.id === "plawbench-weighted"
+                      ? "PLawBench"
+                      : g.id === "plawbench-macro"
+                      ? "PLaw Macro"
+                      : g.id === "lawbench-macro"
+                      ? "LawBench"
+                      : "Example"}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
 

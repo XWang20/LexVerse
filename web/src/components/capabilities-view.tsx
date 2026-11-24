@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   RiBookReadLine,
   RiCheckLine,
@@ -8,7 +9,6 @@ import {
   RiCpuLine,
   RiDatabase2Line,
   RiExternalLinkLine,
-  RiFileCodeLine,
   RiFileCopyLine,
   RiRefreshLine,
   RiSearchLine,
@@ -22,7 +22,13 @@ import type {
   CapabilitySkillItem,
 } from "@/lib/storage-types";
 import type { RuntimeMode } from "@/lib/lexverse-data";
-import { cn, TerminalSnippet } from "./magic-ui";
+import {
+  SlidingPill,
+  TerminalSnippet,
+  cn,
+  getKnowledgeDomainTone,
+  getSkillCategoryTone,
+} from "./magic-ui";
 
 type CapabilitiesTab = "skills" | "knowledge" | "mcp";
 
@@ -58,7 +64,7 @@ function CopySnippetButton({
     <button
       type="button"
       onClick={() => onCopy(text)}
-      className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-1 text-[11px] font-mono text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white transition cursor-pointer"
+      className="lv-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-mono cursor-pointer"
     >
       {copied ? <RiCheckLine className="w-3 h-3 text-emerald-600" /> : <RiFileCopyLine className="w-3 h-3" />}
       <span>{copied ? "Copied" : label}</span>
@@ -193,7 +199,7 @@ export function CapabilitiesView({
                   `Verified ${summary?.totalSkills ?? 41} Skills, ${summary?.prebuiltCollections ?? 16} prebuilt collections, and ${summary?.localWorkspaceIndexes ?? 1} local workspace index.`
                 );
               }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 px-4 py-2 text-xs font-medium hover:bg-zinc-50 dark:hover:bg-zinc-900 cursor-pointer shrink-0"
+              className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium cursor-pointer shrink-0"
             >
               <RiRefreshLine className={cn("w-3.5 h-3.5 text-emerald-600", refreshing && "animate-spin")} />
               <span>Verify Local Capabilities</span>
@@ -207,38 +213,54 @@ export function CapabilitiesView({
               label: "Mounted Skills",
               value: `${summary?.totalSkills ?? 41}`,
               sub: `${summary?.legalSkills ?? 38} Chinese Legal · ${summary?.officeSkills ?? 3} Office`,
+              icon: RiBookReadLine,
+              iconCls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
             },
             {
               label: "Knowledge Collections",
               value: `${summary?.prebuiltCollections ?? 16}`,
               sub: `5 domains + ${summary?.localWorkspaceIndexes ?? 1} local index`,
+              icon: RiDatabase2Line,
+              iconCls: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
             },
             {
               label: "Indexed Legal Chunks",
               value: (summary?.prebuiltChunks ?? 899923).toLocaleString(),
               sub: `${retrieval?.embeddingModel || "BAAI/bge-m3"} · ${retrieval?.mode || "hybrid"}`,
+              icon: RiSparkling2Line,
+              iconCls: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
             },
             {
               label: "MCP & Built-in Tools",
               value: `${summary?.mcpToolsAndResources ?? 4} / ${summary?.builtinTools ?? 11}`,
               sub: `${summary?.mcpServers ?? 2} MCP protocols · ResourceSelection`,
+              icon: RiCpuLine,
+              iconCls: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
             },
-          ].map((kpi) => (
-            <div
-              key={kpi.label}
-              className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 px-4 py-3"
-            >
-              <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
-                {kpi.label}
+          ].map((kpi) => {
+            const Icon = kpi.icon;
+            return (
+              <div
+                key={kpi.label}
+                className="relative overflow-hidden rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 px-4 py-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                    {kpi.label}
+                  </div>
+                  <span className={cn("w-6 h-6 rounded-md border grid place-items-center shrink-0", kpi.iconCls)}>
+                    <Icon className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+                <div className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-white mt-0.5 tabular-nums">
+                  {kpi.value}
+                </div>
+                <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
+                  {kpi.sub}
+                </div>
               </div>
-              <div className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-white mt-0.5 tabular-nums">
-                {kpi.value}
-              </div>
-              <div className="text-[11px] font-mono text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
-                {kpi.sub}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Underlined Sub-Tabs */}
@@ -272,17 +294,24 @@ export function CapabilitiesView({
                 aria-selected={active}
                 onClick={() => setSubTab(t.id)}
                 className={cn(
-                  "inline-flex items-center gap-2 pb-3 border-b-2 text-xs font-medium transition cursor-pointer -mb-px",
+                  "relative inline-flex items-center gap-2 pb-3 text-xs font-medium transition cursor-pointer",
                   active
-                    ? "border-zinc-950 dark:border-white text-zinc-950 dark:text-white font-semibold"
-                    : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                    ? "text-zinc-950 dark:text-white font-semibold"
+                    : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
                 )}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{t.label}</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 tabular-nums">
                   {t.count}
                 </span>
+                {active && (
+                  <motion.span
+                    layoutId="capabilities-subtab-underline"
+                    transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                    className="pointer-events-none absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-zinc-950 dark:bg-white"
+                  />
+                )}
               </button>
             );
           })}
@@ -291,7 +320,13 @@ export function CapabilitiesView({
 
       {/* ==================== TAB A: 41 SKILLS ==================== */}
       {subTab === "skills" && (
-        <section className="space-y-4">
+        <motion.section
+          key="skills"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-4"
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="relative flex-1 min-w-[240px] max-w-md">
               <RiSearchLine className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -308,29 +343,46 @@ export function CapabilitiesView({
                 type="button"
                 onClick={() => setPackFilter("all")}
                 className={cn(
-                  "px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer",
+                  "relative px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer",
                   packFilter === "all"
-                    ? "bg-zinc-950 text-white border-zinc-950 dark:bg-white dark:text-zinc-950 dark:border-white"
+                    ? "text-white border-zinc-950 dark:text-zinc-950 dark:border-white"
                     : "border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white"
                 )}
               >
-                All Packs ({skills.length})
+                {packFilter === "all" && (
+                  <SlidingPill
+                    layoutId="capabilities-pack-pill"
+                    className="bg-zinc-950 dark:bg-white"
+                  />
+                )}
+                <span className="relative z-10">All Packs ({skills.length})</span>
               </button>
-              {skillPacks.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setPackFilter((cur) => (cur === p.id ? "all" : p.id))}
-                  className={cn(
-                    "px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer",
-                    packFilter === p.id
-                      ? "bg-zinc-950 text-white border-zinc-950 dark:bg-white dark:text-zinc-950 dark:border-white"
-                      : "border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white"
-                  )}
-                >
-                  {p.id} ({p.skillCount})
-                </button>
-              ))}
+              {skillPacks.map((p) => {
+                const active = packFilter === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setPackFilter((cur) => (cur === p.id ? "all" : p.id))}
+                    className={cn(
+                      "relative px-2.5 py-1 rounded-full text-[11px] font-mono border transition cursor-pointer",
+                      active
+                        ? "text-white border-zinc-950 dark:text-zinc-950 dark:border-white"
+                        : "border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white"
+                    )}
+                  >
+                    {active && (
+                      <SlidingPill
+                        layoutId="capabilities-pack-pill"
+                        className="bg-zinc-950 dark:bg-white"
+                      />
+                    )}
+                    <span className="relative z-10">
+                      {p.id} ({p.skillCount})
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -353,69 +405,78 @@ export function CapabilitiesView({
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {filteredSkills.map((sk) => (
-              <div
-                key={`${sk.packId}-${sk.id}`}
-                className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 flex flex-col justify-between gap-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-zinc-300 dark:hover:border-zinc-700 transition"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <code className="font-mono text-xs font-semibold text-zinc-950 dark:text-white break-all">
-                          {sk.name}
-                        </code>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
-                          {sk.category}
-                        </span>
+            {filteredSkills.map((sk) => {
+              const tone = getSkillCategoryTone(sk.category);
+              return (
+                <div
+                  key={`${sk.packId}-${sk.id}`}
+                  className="group relative rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4 flex flex-col justify-between gap-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 hover:shadow-[0_8px_18px_-10px_rgba(15,23,42,0.12)]"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <code className="font-mono text-xs font-semibold text-zinc-950 dark:text-white break-all">
+                            {sk.name}
+                          </code>
+                          <span className={cn("text-[10px] font-mono px-2 py-0.5 rounded-full font-medium", tone.badge)}>
+                            {sk.category}
+                          </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-400 mt-0.5 truncate">
+                          {sk.mountPath} · {sk.fileCount} {sk.fileCount === 1 ? "file" : "files"} · {(sk.sizeBytes / 1024).toFixed(1)} KB
+                        </div>
                       </div>
-                      <div className="text-[10px] font-mono text-zinc-400 mt-0.5 truncate">
-                        {sk.mountPath} · {sk.fileCount} {sk.fileCount === 1 ? "file" : "files"} · {(sk.sizeBytes / 1024).toFixed(1)} KB
-                      </div>
+
+                      <span
+                        className={cn(
+                          "shrink-0 text-[10px] font-mono px-2 py-0.5 rounded-md",
+                          sk.packId === "harvey_labs"
+                            ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
+                            : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        )}
+                      >
+                        {sk.packId === "harvey_labs" ? "harvey-labs" : "legal-chinese"}
+                      </span>
                     </div>
 
-                    <span
-                      className={cn(
-                        "shrink-0 text-[10px] font-mono px-2 py-0.5 rounded-md",
-                        sk.packId === "harvey_labs"
-                          ? "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300"
-                          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                      )}
-                    >
-                      {sk.packId === "harvey_labs" ? "harvey-labs" : "legal-chinese"}
-                    </span>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-3">
+                      {sk.description || "SOP workflow specification in SKILL.md."}
+                    </p>
                   </div>
 
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-3">
-                    {sk.description || "SOP workflow specification in SKILL.md."}
-                  </p>
+                  <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-xs">
+                    <CopySnippetButton
+                      text={buildSkillYamlSnippet(sk)}
+                      copied={copiedKey === `skill-${sk.id}`}
+                      onCopy={(t) => handleCopy(`skill-${sk.id}`, t, `Copied YAML SkillRef for ${sk.name}`)}
+                      label="Copy YAML"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSkill(sk)}
+                      className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                    >
+                      <span>Inspect SKILL.md</span>
+                      <span className="inline-block transition-transform duration-150 group-hover:translate-x-0.5">→</span>
+                    </button>
+                  </div>
                 </div>
-
-                <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-2 text-xs">
-                  <CopySnippetButton
-                    text={buildSkillYamlSnippet(sk)}
-                    copied={copiedKey === `skill-${sk.id}`}
-                    onCopy={(t) => handleCopy(`skill-${sk.id}`, t, `Copied YAML SkillRef for ${sk.name}`)}
-                    label="Copy YAML"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setSelectedSkill(sk)}
-                    className="inline-flex items-center gap-1 font-medium text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
-                  >
-                    <span>Inspect SKILL.md</span>
-                    <span>→</span>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </section>
+        </motion.section>
       )}
 
       {/* ==================== TAB B: KNOWLEDGE STORES (16 + LOCAL) ==================== */}
       {subTab === "knowledge" && (
-        <section className="space-y-4">
+        <motion.section
+          key="knowledge"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-4"
+        >
           {retrieval && (
             <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/50 p-4 flex flex-wrap items-center justify-between gap-4">
               <div className="space-y-1">
@@ -499,23 +560,24 @@ export function CapabilitiesView({
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
                   {filteredPrebuilt.map((col: CapabilityKnowledgeCollection) => {
                     const pct = Math.max(2, Math.round((col.chunkCount / maxChunkCount) * 100));
+                    const domTone = getKnowledgeDomainTone(col.domain);
                     return (
                       <tr key={col.indexHash || col.id} className="hover:bg-zinc-50/60 dark:hover:bg-zinc-900/40">
                         <td className="px-5 py-3 font-mono font-semibold text-zinc-950 dark:text-white">
                           {col.id}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 font-medium">
+                          <span className={cn("text-[11px] px-2 py-0.5 rounded-full font-medium", domTone.badge)}>
                             {DOMAIN_META[col.domain]?.label || col.domain}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                        <td className={cn("px-4 py-3 text-right font-mono font-semibold tabular-nums", domTone.text)}>
                           {col.chunkCount.toLocaleString()}
                         </td>
                         <td className="px-4 py-3">
                           <div className="h-1.5 rounded-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-emerald-500/80"
+                              className={cn("h-full rounded-full", domTone.bar)}
                               style={{ width: `${pct}%` }}
                             />
                           </div>
@@ -570,12 +632,18 @@ export function CapabilitiesView({
               </div>
             </div>
           )}
-        </section>
+        </motion.section>
       )}
 
       {/* ==================== TAB C: MCP SERVERS & BUILT-IN TOOLS ==================== */}
       {subTab === "mcp" && (
-        <section className="space-y-5">
+        <motion.section
+          key="mcp"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18 }}
+          className="space-y-5"
+        >
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {mcpServers.map((srv) => (
               <div
@@ -670,7 +738,7 @@ export function CapabilitiesView({
                       label="Copy YAML"
                     />
                   </div>
-                  <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3 text-[11px] font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto">
+                  <pre className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-[11px] font-mono text-zinc-200 overflow-x-auto">
                     {srv.yamlExample}
                   </pre>
                 </div>
@@ -722,21 +790,30 @@ export function CapabilitiesView({
               ))}
             </div>
           </div>
-        </section>
+        </motion.section>
       )}
 
       {/* ==================== SKILL.MD INSPECTOR MODAL ==================== */}
-      {selectedSkill && (
-        <div
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4"
-          onClick={() => setSelectedSkill(null)}
-        >
-          <div
-            role="dialog"
-            aria-label={`Inspect ${selectedSkill.name} SKILL.md`}
-            className="w-full max-w-3xl max-h-[85vh] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {selectedSkill && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex items-center justify-center p-4"
+            onClick={() => setSelectedSkill(null)}
           >
+            <motion.div
+              role="dialog"
+              aria-label={`Inspect ${selectedSkill.name} SKILL.md`}
+              initial={{ opacity: 0, scale: 0.97, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 4 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="w-full max-w-3xl max-h-[85vh] rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
             <div className="px-6 py-4 border-b border-zinc-200/80 dark:border-zinc-800 flex items-start justify-between gap-4">
               <div className="space-y-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -814,9 +891,10 @@ export function CapabilitiesView({
                 </pre>
               </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

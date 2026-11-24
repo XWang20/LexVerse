@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
 import {
   RiAddLine,
   RiArrowLeftLine,
@@ -15,6 +16,7 @@ import {
   RiTerminalBoxLine,
 } from "@remixicon/react";
 import type {
+  HarborWorkspaceData,
   StorageOverviewResponse,
   StorageRootId,
   StoredJobRecord,
@@ -24,7 +26,7 @@ import type {
 import type { JobRunRecord, RuntimeMode } from "@/lib/lexverse-data";
 import { BENCHMARK_TASK_NAMES, LAWBENCH_TASK_NAMES, PLAWBENCH_TASK_NAMES } from "@/lib/lexverse-data";
 import { withBasePath } from "@/lib/runtime-config";
-import { cn, TerminalSnippet } from "./magic-ui";
+import { SlidingPill, cn, TerminalSnippet } from "./magic-ui";
 import { MebiusEfficiencyAreaCard, PLawBenchBreakdownChart } from "./mebius-charts";
 import type { ComposerPreset } from "./experiment-composer";
 import { TrialDetailView, type TrialRefInput } from "./trial-detail-view";
@@ -94,6 +96,16 @@ const ARM_SHORT: Record<string, string> = {
   default: "Standard",
 };
 
+function modeChipClass(label: string): string {
+  if (label.includes("Cap")) {
+    return "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium";
+  }
+  if (label === "Vanilla" || label === "Base") {
+    return "border-indigo-500/25 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-medium";
+  }
+  return "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300";
+}
+
 const TASK_DESCRIPTIONS: Record<string, string> = {
   plawbench: "Practical Chinese legal tasks: Case Analysis (250), Public Consultation (18) & Document Drafting (12).",
   lawbench: "20 cognitive legal tasks across Memorization (1-x), Understanding (2-x) & Application (3-x) at 10,000 scale.",
@@ -109,6 +121,7 @@ const TASK_DESCRIPTIONS: Record<string, string> = {
 export function JobsExplorer({
   storageOverview,
   staticTrials,
+  harborWorkspace,
   runs,
   mode,
   navTarget,
@@ -118,6 +131,7 @@ export function JobsExplorer({
 }: {
   storageOverview: StorageOverviewResponse | null;
   staticTrials: StoredTrialIndexEntry[];
+  harborWorkspace?: HarborWorkspaceData | null;
   runs: JobRunRecord[];
   mode: RuntimeMode;
   navTarget?: JobsNavTarget | null;
@@ -622,7 +636,7 @@ export function JobsExplorer({
                 else if (selectedJobKey) navigateJobs(selectedTask, null, null);
                 else navigateJobs(null, null, null);
               }}
-              className="inline-flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              className="lv-btn-secondary inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer"
             >
               <RiArrowLeftLine className="w-3.5 h-3.5" />
               Up One Level
@@ -634,7 +648,7 @@ export function JobsExplorer({
               type="button"
               onClick={onRefreshStorage}
               disabled={refreshing}
-              className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer"
             >
               <RiRefreshLine className={cn("w-3.5 h-3.5", refreshing && "animate-spin")} />
               <span>Rescan</span>
@@ -650,7 +664,7 @@ export function JobsExplorer({
               )
             }
             disabled={!jobs.length}
-            className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer"
+            className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer disabled:opacity-45"
           >
             <RiDownload2Line className="w-3.5 h-3.5" />
             Export CSV
@@ -667,7 +681,7 @@ export function JobsExplorer({
                     : selectedTask || "plawbench",
               })
             }
-            className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 px-3.5 py-1.5 text-xs font-medium cursor-pointer"
+            className="lv-btn-primary inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
           >
             <RiAddLine className="w-3.5 h-3.5" />
             <span>{mode === "serve" ? "New Job" : "CLI Config"}</span>
@@ -704,28 +718,46 @@ export function JobsExplorer({
 
           {/* Global KPI Strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Evaluated Tasks</div>
+            <div className="relative overflow-hidden rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>Evaluated Tasks</span>
+                <RiFolderOpenLine className="w-3.5 h-3.5 text-indigo-500" />
+              </div>
               <div className="text-2xl font-semibold text-zinc-950 dark:text-white tabular-nums mt-0.5">
                 {taskRows.length}
               </div>
             </div>
-            <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Stored Jobs</div>
+            <div className="relative overflow-hidden rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>Stored Jobs</span>
+                <RiTerminalBoxLine className="w-3.5 h-3.5 text-sky-500" />
+              </div>
               <div className="text-2xl font-semibold text-zinc-950 dark:text-white tabular-nums mt-0.5">
                 {summary?.totalJobs ?? jobs.length}
               </div>
             </div>
-            <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Stored Trials</div>
+            <div className="relative overflow-hidden rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>Stored Trials</span>
+                <RiRouteLine className="w-3.5 h-3.5 text-violet-500" />
+              </div>
               <div className="text-2xl font-semibold text-zinc-950 dark:text-white tabular-nums mt-0.5">
                 {(summary?.totalCompletedTrials ?? 0).toLocaleString()}
               </div>
             </div>
-            <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Completion Rate</div>
+            <div className="relative overflow-hidden rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+              <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400">
+                <span>Completion Rate</span>
+                <RiCheckLine className="w-3.5 h-3.5 text-emerald-500" />
+              </div>
               <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">
                 {summary?.completionRate ?? 100}%
+              </div>
+              <div className="mt-2 h-1 w-full rounded-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                  style={{ width: `${Math.min(100, Math.max(0, summary?.completionRate ?? 100))}%` }}
+                />
               </div>
             </div>
           </div>
@@ -840,7 +872,7 @@ export function JobsExplorer({
                       <tr
                         key={row.taskName}
                         onClick={() => navigateJobs(row.taskName, null, null, true)}
-                        className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40 cursor-pointer transition"
+                        className="group hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40 cursor-pointer transition"
                       >
                         <td className="py-3.5 px-4 max-w-[320px]">
                           <div className="flex items-center gap-2">
@@ -885,6 +917,12 @@ export function JobsExplorer({
                           <div className="text-[10px] text-emerald-600 dark:text-emerald-400">
                             {row.completionPct}% done
                           </div>
+                          <div className="w-14 ml-auto mt-1 h-1 rounded-full bg-zinc-200/80 dark:bg-zinc-800 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-emerald-500"
+                              style={{ width: `${Math.min(100, Math.max(4, row.completionPct))}%` }}
+                            />
+                          </div>
                         </td>
 
                         <td className="py-3.5 px-3">
@@ -892,7 +930,7 @@ export function JobsExplorer({
                             {row.armLabels.map((lbl) => (
                               <span
                                 key={lbl}
-                                className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300"
+                                className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded border", modeChipClass(lbl))}
                               >
                                 {lbl}
                               </span>
@@ -943,8 +981,9 @@ export function JobsExplorer({
                         </td>
 
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-[11px] font-medium">
-                            Jobs →
+                          <span className="lv-btn-tertiary inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium">
+                            <span>Jobs</span>
+                            <span className="inline-block transition-transform duration-150 group-hover:translate-x-0.5">→</span>
                           </span>
                         </td>
                       </tr>
@@ -1055,7 +1094,7 @@ export function JobsExplorer({
                     <tr
                       key={j.key}
                       onClick={() => handleOpenJob(j)}
-                      className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40 cursor-pointer transition"
+                      className="group hover:bg-zinc-50/80 dark:hover:bg-zinc-900/40 cursor-pointer transition"
                     >
                       <td className="py-3 px-4">
                         <div className="font-mono font-semibold text-zinc-950 dark:text-white flex items-center gap-2">
@@ -1097,8 +1136,9 @@ export function JobsExplorer({
                           : "—"}
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <span className="inline-flex items-center gap-1 whitespace-nowrap px-3 py-1 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-[11px] font-medium">
-                          {j.hasTrajectories ? "Trials & Traces →" : "Report →"}
+                        <span className="lv-btn-tertiary inline-flex items-center gap-1 whitespace-nowrap px-3 py-1 rounded-full text-[11px] font-medium">
+                          <span>{j.hasTrajectories ? "Trials & Traces" : "Report"}</span>
+                          <span className="inline-block transition-transform duration-150 group-hover:translate-x-0.5">→</span>
                         </span>
                       </td>
                     </tr>
@@ -1156,7 +1196,7 @@ export function JobsExplorer({
                         selectedJob.arm === "full_capabilities",
                     })
                   }
-                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 px-3 py-1.5 text-xs font-medium cursor-pointer"
+                  className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer"
                 >
                   <RiTerminalBoxLine className="w-3.5 h-3.5" />
                   Clone &amp; Run
@@ -1171,6 +1211,7 @@ export function JobsExplorer({
               trialRef={selectedTrial}
               mode={mode}
               staticTrials={staticTrials}
+              harborWorkspace={harborWorkspace}
               onOpenComposerWithPreset={onOpenComposer}
             />
           ) : isSingleTrialJob ? (
@@ -1181,27 +1222,33 @@ export function JobsExplorer({
                   type="button"
                   onClick={() => setSingleJobSubTab("trial")}
                   className={cn(
-                    "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition cursor-pointer",
+                    "relative inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition cursor-pointer",
                     singleJobSubTab === "trial"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  <RiRouteLine className="w-3.5 h-3.5" />
-                  Trial Trajectory &amp; Harbor Workspace
+                  {singleJobSubTab === "trial" && <SlidingPill layoutId="jobs-single-subtab" />}
+                  <span className="relative z-10 inline-flex items-center gap-1.5">
+                    <RiRouteLine className="w-3.5 h-3.5" />
+                    Trial Trajectory &amp; Harbor Workspace
+                  </span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setSingleJobSubTab("report")}
                   className={cn(
-                    "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition cursor-pointer",
+                    "relative inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition cursor-pointer",
                     singleJobSubTab === "report"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  <RiFolderOpenLine className="w-3.5 h-3.5" />
-                  Job Report &amp; Files ({selectedJob.files.length})
+                  {singleJobSubTab === "report" && <SlidingPill layoutId="jobs-single-subtab" />}
+                  <span className="relative z-10 inline-flex items-center gap-1.5">
+                    <RiFolderOpenLine className="w-3.5 h-3.5" />
+                    Job Report &amp; Files ({selectedJob.files.length})
+                  </span>
                 </button>
               </div>
 
@@ -1210,6 +1257,7 @@ export function JobsExplorer({
                   trialRef={inlineSingleTrialRef}
                   mode={mode}
                   staticTrials={staticTrials}
+                  harborWorkspace={harborWorkspace}
                   onOpenComposerWithPreset={onOpenComposer}
                 />
               ) : (
@@ -1230,38 +1278,43 @@ export function JobsExplorer({
                     type="button"
                     onClick={() => setJobSubTab("trials")}
                     className={cn(
-                      "px-3.5 py-1.5 rounded-full transition cursor-pointer",
+                      "relative px-3.5 py-1.5 rounded-full transition cursor-pointer",
                       jobSubTab === "trials"
-                        ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                        ? "text-zinc-950 dark:text-white font-semibold"
                         : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                     )}
                   >
-                    Trials &amp; Trajectories ({selectedJob.trajectoryCount.toLocaleString()})
+                    {jobSubTab === "trials" && <SlidingPill layoutId="jobs-multi-subtab" />}
+                    <span className="relative z-10">
+                      Trials &amp; Trajectories ({selectedJob.trajectoryCount.toLocaleString()})
+                    </span>
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setJobSubTab("report")}
                   className={cn(
-                    "px-3.5 py-1.5 rounded-full transition cursor-pointer",
+                    "relative px-3.5 py-1.5 rounded-full transition cursor-pointer",
                     jobSubTab === "report"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  Metrics &amp; Subtasks
+                  {jobSubTab === "report" && <SlidingPill layoutId="jobs-multi-subtab" />}
+                  <span className="relative z-10">Metrics &amp; Subtasks</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setJobSubTab("files")}
                   className={cn(
-                    "px-3.5 py-1.5 rounded-full transition cursor-pointer",
+                    "relative px-3.5 py-1.5 rounded-full transition cursor-pointer",
                     jobSubTab === "files"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  Job Files ({selectedJob.files.length})
+                  {jobSubTab === "files" && <SlidingPill layoutId="jobs-multi-subtab" />}
+                  <span className="relative z-10">Job Files ({selectedJob.files.length})</span>
                 </button>
               </div>
 
@@ -1313,7 +1366,7 @@ export function JobsExplorer({
                                 true
                               )
                             }
-                            className="hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 cursor-pointer"
+                            className="group hover:bg-zinc-50/80 dark:hover:bg-zinc-900/50 cursor-pointer transition"
                           >
                             <td className="py-2.5 px-4">
                               <div className="font-mono font-semibold text-zinc-950 dark:text-white">
@@ -1351,8 +1404,9 @@ export function JobsExplorer({
                                 : tr.status}
                             </td>
                             <td className="py-2.5 px-4 text-right">
-                              <span className="px-2.5 py-1 rounded-full bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 text-[11px] font-medium whitespace-nowrap">
-                                Open →
+                              <span className="lv-btn-tertiary inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap">
+                                <span>Open</span>
+                                <span className="inline-block transition-transform duration-150 group-hover:translate-x-0.5">→</span>
                               </span>
                             </td>
                           </tr>

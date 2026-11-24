@@ -168,19 +168,21 @@ export function MagicCard(props: MagicCardProps) {
       <div className="bg-background absolute inset-px z-20 rounded-[inherit]" />
 
       {mode === "gradient" && (
-        <motion.div
-          suppressHydrationWarning
-          className="pointer-events-none absolute inset-px z-30 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-          style={{
-            background: useMotionTemplate`
-              radial-gradient(${gradientSize}px circle at ${mouseX}px ${mouseY}px,
-                ${gradientColor},
-                transparent 100%
-              )
-            `,
-            opacity: gradientOpacity,
-          }}
-        />
+        <div className="pointer-events-none absolute inset-px z-30 rounded-[inherit] opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <motion.div
+            suppressHydrationWarning
+            className="h-full w-full rounded-[inherit]"
+            style={{
+              background: useMotionTemplate`
+                radial-gradient(${gradientSize}px circle at ${mouseX}px ${mouseY}px,
+                  ${gradientColor},
+                  transparent 100%
+                )
+              `,
+              opacity: gradientOpacity,
+            }}
+          />
+        </div>
       )}
 
       {mode === "orb" && (
@@ -203,7 +205,7 @@ export function MagicCard(props: MagicCardProps) {
           }}
         />
       )}
-      <div className="relative z-40">{children}</div>
+      <div className="relative z-40 h-full">{children}</div>
     </motion.div>
   )
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "motion/react";
 import {
   RiRobot2Line,
   RiUser3Line,
@@ -13,8 +14,10 @@ import {
   RiCheckDoubleLine,
   RiSparkling2Line,
   RiDownload2Line,
+  RiArrowDownSLine,
   RiArrowLeftLine,
   RiArrowRightLine,
+  RiArrowRightSLine,
   RiTerminalLine,
   RiInformationLine,
   RiFolderOpenLine,
@@ -29,13 +32,16 @@ import {
 } from "@remixicon/react";
 import type {
   AgentWorkspaceFile,
+  HarborTreeNode,
+  HarborWorkspaceData,
   StorageRootId,
   StoredTrialDetail,
   StoredTrialIndexEntry,
 } from "@/lib/storage-types";
 import type { RuntimeMode } from "@/lib/lexverse-data";
 import { withBasePath } from "@/lib/runtime-config";
-import { TerminalSnippet, cn } from "./magic-ui";
+import { SlidingPill, TerminalSnippet, TrialDetailSkeleton, cn } from "./magic-ui";
+import { HarborNodePreviewPane, getFileNodeTint } from "./workspace-view";
 import { StepTokenTimelineChart } from "./mebius-charts";
 import type { ComposerPreset } from "./experiment-composer";
 
@@ -95,11 +101,13 @@ export function TrialDetailView({
   trialRef,
   mode,
   staticTrials,
+  harborWorkspace,
   onOpenComposerWithPreset,
 }: {
   trialRef: TrialRefInput | null;
   mode: RuntimeMode;
   staticTrials: StoredTrialIndexEntry[];
+  harborWorkspace?: HarborWorkspaceData | null;
   onOpenComposerWithPreset: (preset: ComposerPreset) => void;
 }) {
   const [bundle, setBundle] = useState<StoredTrialDetail | null>(null);
@@ -117,6 +125,12 @@ export function TrialDetailView({
   const [skillSearch, setSkillSearch] = useState("");
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
   const [trialPdfViewMode, setTrialPdfViewMode] = useState<"embed" | "text">("embed");
+  const [expandedWsDirs, setExpandedWsDirs] = useState<Record<string, boolean>>({
+    workspace: true,
+    environment: true,
+    "environment/inputs": true,
+    runtime: true,
+  });
 
   const detailCacheRef = useRef<Record<string, StoredTrialDetail>>({});
 
@@ -229,6 +243,40 @@ export function TrialDetailView({
   const totalTokens =
     (bundle?.usage?.promptTokens || 0) + (bundle?.usage?.completionTokens || 0);
 
+  const matchedTaskPkg = useMemo(
+    () => (bundle && harborWorkspace?.taskPackages?.find((p) => p.id === bundle.taskName)) || null,
+    [bundle, harborWorkspace]
+  );
+
+  const pkgNodeMap = useMemo(() => {
+    const map = new Map<string, HarborTreeNode>();
+    const walk = (nodes: HarborTreeNode[]) => {
+      for (const n of nodes) {
+        if (n.kind === "file") map.set(`pkg:${n.relPath}`, n);
+        if (n.children) walk(n.children);
+      }
+    };
+    if (matchedTaskPkg?.tree) walk(matchedTaskPkg.tree);
+    return map;
+  }, [matchedTaskPkg]);
+
+  const accessedStepByBase = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inp of accessedInputs) {
+      const base = String(inp.path || "").split("/").pop();
+      if (base && !map.has(base)) map.set(base, inp.stepId);
+    }
+    return map;
+  }, [accessedInputs]);
+
+  const toggleWsDir = (key: string) => {
+    setExpandedWsDirs((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const selectedPkgNode = selectedWsNode.startsWith("pkg:")
+    ? pkgNodeMap.get(selectedWsNode) || null
+    : null;
+
   const selectedWorkFile = useMemo(
     () => workFiles.find((f) => f.id === selectedWsNode) || null,
     [workFiles, selectedWsNode]
@@ -269,11 +317,7 @@ export function TrialDetailView({
   };
 
   if (loading) {
-    return (
-      <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-10 text-center text-xs text-zinc-500 font-mono">
-        Loading stored trial trajectory, judge assessment &amp; agent workspace ({trialRef?.storagePath})…
-      </div>
-    );
+    return <TrialDetailSkeleton />;
   }
 
   if (loadError) {
@@ -322,7 +366,7 @@ export function TrialDetailView({
               <button
                 type="button"
                 onClick={handleExportTraceJson}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-200 px-3 py-1.5 text-xs font-medium transition cursor-pointer"
+                className="lv-btn-secondary inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium cursor-pointer"
               >
                 <RiDownload2Line className="w-3.5 h-3.5" />
                 Export JSON
@@ -343,7 +387,7 @@ export function TrialDetailView({
                       bundle.arm === "full_capabilities" || bundle.arm === "vanilla_cap",
                   })
                 }
-                className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 px-3.5 py-1.5 text-xs font-medium transition cursor-pointer"
+                className="lv-btn-primary inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
               >
                 <RiTerminalBoxLine className="w-3.5 h-3.5" />
                 {mode === "serve" ? "Clone & Re-run" : "Reproduce CLI"}
@@ -397,14 +441,21 @@ export function TrialDetailView({
             aria-selected={activeTab === "trace"}
             onClick={() => setActiveTab("trace")}
             className={cn(
-              "inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition cursor-pointer -mb-px",
+              "relative inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap transition cursor-pointer",
               activeTab === "trace"
-                ? "border-zinc-950 dark:border-white text-zinc-950 dark:text-white font-semibold"
-                : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                ? "text-zinc-950 dark:text-white font-semibold"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
             )}
           >
             <RiRouteLine className="w-3.5 h-3.5" />
             <span>Run trace</span>
+            {activeTab === "trace" && (
+              <motion.span
+                layoutId="trial-primary-tab"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-zinc-950 dark:bg-white"
+              />
+            )}
           </button>
 
           <button
@@ -413,10 +464,10 @@ export function TrialDetailView({
             aria-selected={activeTab === "judge"}
             onClick={() => setActiveTab("judge")}
             className={cn(
-              "inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition cursor-pointer -mb-px",
+              "relative inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap transition cursor-pointer",
               activeTab === "judge"
-                ? "border-zinc-950 dark:border-white text-zinc-950 dark:text-white font-semibold"
-                : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                ? "text-zinc-950 dark:text-white font-semibold"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
             )}
           >
             <RiScales3Line className="w-3.5 h-3.5" />
@@ -426,6 +477,13 @@ export function TrialDetailView({
                 {scoreBadgeText}
               </span>
             )}
+            {activeTab === "judge" && (
+              <motion.span
+                layoutId="trial-primary-tab"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-zinc-950 dark:bg-white"
+              />
+            )}
           </button>
 
           <button
@@ -434,10 +492,10 @@ export function TrialDetailView({
             aria-selected={activeTab === "workspace"}
             onClick={() => setActiveTab("workspace")}
             className={cn(
-              "inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap border-b-2 transition cursor-pointer -mb-px",
+              "relative inline-flex items-center gap-2 py-3 text-xs font-medium whitespace-nowrap transition cursor-pointer",
               activeTab === "workspace"
-                ? "border-zinc-950 dark:border-white text-zinc-950 dark:text-white font-semibold"
-                : "border-transparent text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                ? "text-zinc-950 dark:text-white font-semibold"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
             )}
           >
             <RiFolderOpenLine className="w-3.5 h-3.5" />
@@ -446,6 +504,13 @@ export function TrialDetailView({
               <span className="font-mono text-[10px] px-1.5 py-0.2 rounded-full bg-zinc-200/80 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-semibold">
                 {workFiles.length}
               </span>
+            )}
+            {activeTab === "workspace" && (
+              <motion.span
+                layoutId="trial-primary-tab"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }}
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-zinc-950 dark:bg-white"
+              />
             )}
           </button>
         </div>
@@ -517,25 +582,27 @@ export function TrialDetailView({
                     setSelectedStepIdx("all");
                   }}
                   className={cn(
-                    "px-3 py-1 rounded-full transition cursor-pointer",
+                    "relative px-3 py-1 rounded-full transition cursor-pointer",
                     traceDensity === "focus"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  Focus
+                  {traceDensity === "focus" && <SlidingPill layoutId="trial-density-pill" />}
+                  <span className="relative z-10">Focus</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setTraceDensity("full")}
                   className={cn(
-                    "px-3 py-1 rounded-full transition cursor-pointer",
+                    "relative px-3 py-1 rounded-full transition cursor-pointer",
                     traceDensity === "full"
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
+                      ? "text-zinc-950 dark:text-white font-semibold"
                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                   )}
                 >
-                  Full
+                  {traceDensity === "full" && <SlidingPill layoutId="trial-density-pill" />}
+                  <span className="relative z-10">Full</span>
                 </button>
               </div>
             </div>
@@ -872,7 +939,7 @@ export function TrialDetailView({
                             <button
                               type="button"
                               onClick={() => openPathInWorkspace(String(targetFile))}
-                              className="shrink-0 px-3 py-1 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 text-[11px] font-medium transition cursor-pointer"
+                              className="lv-btn-tertiary shrink-0 px-3 py-1 rounded-full text-[11px] font-medium cursor-pointer"
                             >
                               Workspace →
                             </button>
@@ -1294,180 +1361,328 @@ export function TrialDetailView({
               </p>
             </div>
 
-            <div className="space-y-4 text-xs font-mono">
-              {/* Group 1: /work/ (Agent-Created Deliverables, Scripts & Persisted Files) */}
-              <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-400 px-2 flex items-center justify-between">
-                  <span>/work/ (Agent Outputs &amp; Scripts)</span>
-                  <span>{workFiles.length}</span>
-                </div>
+            <div className="space-y-0.5 text-xs font-mono max-h-[540px] overflow-y-auto">
+              {/* Folder 1: workspace/ (Per-trial Agent Deliverables & Scripts) */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleWsDir("workspace")}
+                  style={{ paddingLeft: "8px" }}
+                  className="w-full text-left py-1.5 pr-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 flex items-center justify-between gap-2 text-xs font-mono text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                >
+                  <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                    {expandedWsDirs.workspace ? (
+                      <RiArrowDownSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    ) : (
+                      <RiArrowRightSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    )}
+                    <RiFolderOpenLine className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="truncate font-semibold">workspace/</span>
+                  </span>
+                  <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">
+                    {workFiles.length || 1}
+                  </span>
+                </button>
 
-                {workFiles.map((wf) => {
-                  const active = selectedWsNode === wf.id;
-                  return (
+                {expandedWsDirs.workspace && (
+                  <div>
+                    {workFiles.map((wf) => {
+                      const active = selectedWsNode === wf.id;
+                      const ext = wf.format ? `.${wf.format}` : wf.name.includes(".") ? `.${wf.name.split(".").pop()}` : "";
+                      const tint = getFileNodeTint({ ext });
+                      return (
+                        <button
+                          key={wf.id}
+                          type="button"
+                          onClick={() => setSelectedWsNode(wf.id)}
+                          style={{ paddingLeft: "24px" }}
+                          className={cn(
+                            "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                            active
+                              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                              : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                          )}
+                        >
+                          <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                            {wf.category === "artifact" ? (
+                              <RiFileTextLine className={cn("w-3.5 h-3.5 shrink-0", tint.iconClass)} />
+                            ) : (
+                              <RiFileCodeLine className={cn("w-3.5 h-3.5 shrink-0", tint.iconClass)} />
+                            )}
+                            <span className="truncate">{wf.name}</span>
+                          </span>
+                          <span className="text-[10px] shrink-0 text-zinc-400 tabular-nums">
+                            {wf.category === "artifact"
+                              ? formatBytes(wf.sizeBytes)
+                              : wf.stepId
+                              ? `#${wf.stepId}`
+                              : formatBytes(wf.sizeBytes)}
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {workFiles.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWsNode("virtual:answer")}
+                        style={{ paddingLeft: "24px" }}
+                        className={cn(
+                          "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                          selectedWsNode === "virtual:answer"
+                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-1.5 truncate">
+                          <RiFileTextLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span>response.txt</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400">output</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Task Package Tree (same structure as Landing Page Showcase when matched, e.g. `example`) */}
+              {matchedTaskPkg?.tree &&
+                (() => {
+                  const renderPkgTree = (nodes: HarborTreeNode[], depth = 0): React.ReactNode =>
+                    nodes.map((node) => {
+                      if (node.kind === "dir") {
+                        const open = Boolean(expandedWsDirs[node.relPath]);
+                        return (
+                          <div key={node.relPath}>
+                            <button
+                              type="button"
+                              onClick={() => toggleWsDir(node.relPath)}
+                              style={{ paddingLeft: `${depth * 14 + 8}px` }}
+                              className="w-full text-left py-1.5 pr-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 flex items-center gap-1.5 text-xs font-mono text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                            >
+                              {open ? (
+                                <RiArrowDownSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                              ) : (
+                                <RiArrowRightSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                              )}
+                              <RiFolderOpenLine className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span className="truncate font-semibold">{node.name}/</span>
+                            </button>
+                            {open && node.children && <div>{renderPkgTree(node.children, depth + 1)}</div>}
+                          </div>
+                        );
+                      }
+
+                      const nodeKey = `pkg:${node.relPath}`;
+                      const active = selectedWsNode === nodeKey;
+                      const tint = getFileNodeTint(node);
+                      const readStep = accessedStepByBase.get(node.name);
+                      return (
+                        <button
+                          key={nodeKey}
+                          type="button"
+                          onClick={() => setSelectedWsNode(nodeKey)}
+                          style={{ paddingLeft: `${depth * 14 + 24}px` }}
+                          className={cn(
+                            "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                            active
+                              ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                              : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                          )}
+                        >
+                          <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
+                            {node.previewable ? (
+                              <RiFileCodeLine className={cn("w-3.5 h-3.5 shrink-0", tint.iconClass)} />
+                            ) : (
+                              <RiFileTextLine className={cn("w-3.5 h-3.5 shrink-0", tint.iconClass)} />
+                            )}
+                            <span className="truncate">{node.name}</span>
+                          </span>
+                          <span className="inline-flex items-center gap-1.5 shrink-0">
+                            {readStep !== undefined && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                                read #{readStep}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-zinc-400 tabular-nums">
+                              {formatBytes(node.sizeBytes)}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    });
+
+                  return renderPkgTree(matchedTaskPkg.tree, 0);
+                })()}
+
+              {/* Mounted Skills Row */}
+              <button
+                type="button"
+                onClick={() => setSelectedWsNode("agent_fs:skills")}
+                style={{ paddingLeft: "8px" }}
+                className={cn(
+                  "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                  selectedWsNode === "agent_fs:skills"
+                    ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                    : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                )}
+              >
+                <span className="inline-flex items-center gap-1.5 truncate">
+                  <RiCpuLine className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                  <span className="font-semibold">skills/</span>
+                </span>
+                <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">
+                  {mountedSkills.length} mounted
+                  {invokedSkills.length > 0 ? ` · ${invokedSkills.length} used` : ""}
+                </span>
+              </button>
+
+              {/* Fallback inputs/ folder for benchmark trials without a task package tree */}
+              {!matchedTaskPkg && accessedInputs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedWsNode("agent_fs:inputs")}
+                  style={{ paddingLeft: "8px" }}
+                  className={cn(
+                    "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                    selectedWsNode === "agent_fs:inputs"
+                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                      : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                  )}
+                >
+                  <span className="inline-flex items-center gap-1.5 truncate">
+                    <RiFolderOpenLine className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <span className="font-semibold">inputs/</span>
+                  </span>
+                  <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">
+                    {accessedInputs.length} read
+                  </span>
+                </button>
+              )}
+
+              {/* Folder: runtime/ (Execution Manifests & Read Log) */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => toggleWsDir("runtime")}
+                  style={{ paddingLeft: "8px" }}
+                  className="w-full text-left py-1.5 pr-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 flex items-center gap-1.5 text-xs font-mono text-zinc-700 dark:text-zinc-300 cursor-pointer"
+                >
+                  {expandedWsDirs.runtime ? (
+                    <RiArrowDownSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  ) : (
+                    <RiArrowRightSLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  )}
+                  <RiFolderOpenLine className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                  <span className="truncate font-semibold">runtime/</span>
+                </button>
+
+                {expandedWsDirs.runtime && (
+                  <div>
+                    {matchedTaskPkg && accessedInputs.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWsNode("agent_fs:inputs")}
+                        style={{ paddingLeft: "24px" }}
+                        className={cn(
+                          "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                          selectedWsNode === "agent_fs:inputs"
+                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-1.5 truncate">
+                          <RiFileTextLine className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span>read_file.log</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400 tabular-nums">
+                          {accessedInputs.length} reads
+                        </span>
+                      </button>
+                    )}
+
                     <button
-                      key={wf.id}
                       type="button"
-                      onClick={() => setSelectedWsNode(wf.id)}
+                      onClick={() => setSelectedWsNode("runtime:knowledge")}
+                      style={{ paddingLeft: "24px" }}
                       className={cn(
-                        "w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between gap-2 cursor-pointer transition",
-                        active
+                        "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                        selectedWsNode === "runtime:knowledge"
                           ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
                           : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                       )}
                     >
-                      <span className="inline-flex items-center gap-1.5 min-w-0 truncate">
-                        {wf.category === "artifact" ? (
-                          <RiFileTextLine className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                        ) : (
-                          <RiFileCodeLine className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        )}
-                        <span className="truncate">{wf.path}</span>
+                      <span className="inline-flex items-center gap-1.5 truncate">
+                        <RiFileCodeLine className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>knowledge_indexes.json</span>
                       </span>
-                      <span className="text-[10px] shrink-0 text-zinc-400">
-                        {wf.category === "artifact"
-                          ? formatBytes(wf.sizeBytes)
-                          : wf.stepId
-                          ? `#${wf.stepId}`
-                          : formatBytes(wf.sizeBytes)}
+                      <span className="text-[10px] text-zinc-400 tabular-nums">
+                        {hw?.knowledgeIndexes?.length || 0} stores
                       </span>
                     </button>
-                  );
-                })}
 
-                {workFiles.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWsNode("virtual:answer")}
-                    className={cn(
-                      "w-full text-left px-2.5 py-2 rounded-lg flex items-center justify-between gap-2 cursor-pointer",
-                      selectedWsNode === "virtual:answer"
-                        ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                        : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                    <button
+                      type="button"
+                      onClick={() => setSelectedWsNode("runtime:result")}
+                      style={{ paddingLeft: "24px" }}
+                      className={cn(
+                        "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                        selectedWsNode === "runtime:result"
+                          ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                          : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                      )}
+                    >
+                      <span className="inline-flex items-center gap-1.5 truncate">
+                        <RiFileCodeLine className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>result.json</span>
+                      </span>
+                      <span className="text-[10px] text-zinc-400">manifest</span>
+                    </button>
+
+                    {(hw?.artifactsManifest?.length || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWsNode("runtime:artifacts")}
+                        style={{ paddingLeft: "24px" }}
+                        className={cn(
+                          "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                          selectedWsNode === "runtime:artifacts"
+                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-1.5 truncate">
+                          <RiFileCodeLine className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>artifacts.json</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400 tabular-nums">
+                          {hw?.artifactsManifest.length}
+                        </span>
+                      </button>
                     )}
-                  >
-                    <span className="inline-flex items-center gap-1.5 truncate">
-                      <RiFileTextLine className="w-3.5 h-3.5 shrink-0" />
-                      <span>/work/response.txt</span>
-                    </span>
-                    <span className="text-[10px] text-zinc-400">output</span>
-                  </button>
-                )}
-              </div>
 
-              {/* Group 2: /skills/ */}
-              <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-400 px-2">
-                  /skills/ (Sandbox Mount)
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedWsNode("agent_fs:skills")}
-                  className={cn(
-                    "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                    selectedWsNode === "agent_fs:skills"
-                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                      : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                  )}
-                >
-                  <span>skills/</span>
-                  <span className="text-[10px] text-zinc-400">
-                    {mountedSkills.length} mounted
-                    {invokedSkills.length > 0 ? ` · ${invokedSkills.length} used` : ""}
-                  </span>
-                </button>
-              </div>
-
-              {/* Group 3: /inputs/ (Files Read by Agent During Run) */}
-              {accessedInputs.length > 0 && (
-                <div className="space-y-1">
-                  <div className="text-[10px] uppercase tracking-wider text-zinc-400 px-2">
-                    /inputs/ (Accessed in Run)
+                    {(hw?.lifecycleEvents?.length || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedWsNode("runtime:lifecycle")}
+                        style={{ paddingLeft: "24px" }}
+                        className={cn(
+                          "w-full text-left py-1.5 pr-2 rounded-lg flex items-center justify-between gap-2 text-xs font-mono transition cursor-pointer",
+                          selectedWsNode === "runtime:lifecycle"
+                            ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                        )}
+                      >
+                        <span className="inline-flex items-center gap-1.5 truncate">
+                          <RiFileCodeLine className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                          <span>lifecycle.jsonl</span>
+                        </span>
+                        <span className="text-[10px] text-zinc-400 tabular-nums">
+                          {hw?.lifecycleEvents.length} events
+                        </span>
+                      </button>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWsNode("agent_fs:inputs")}
-                    className={cn(
-                      "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                      selectedWsNode === "agent_fs:inputs"
-                        ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                        : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>read_file history</span>
-                    <span className="text-[10px] text-zinc-400">
-                      {accessedInputs.length} files
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* Group 4: runtime/ */}
-              <div className="space-y-1">
-                <div className="text-[10px] uppercase tracking-wider text-zinc-400 px-2">
-                  runtime/ &amp; trial_root/
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedWsNode("runtime:knowledge")}
-                  className={cn(
-                    "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                    selectedWsNode === "runtime:knowledge"
-                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                      : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                  )}
-                >
-                  <span>knowledge_indexes.json</span>
-                  <span className="text-[10px] text-zinc-400">
-                    {hw?.knowledgeIndexes?.length || 0} stores
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedWsNode("runtime:result")}
-                  className={cn(
-                    "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                    selectedWsNode === "runtime:result"
-                      ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                      : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                  )}
-                >
-                  <span>result.json</span>
-                  <span className="text-[10px] text-zinc-400">manifest</span>
-                </button>
-                {(hw?.artifactsManifest?.length || 0) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWsNode("runtime:artifacts")}
-                    className={cn(
-                      "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                      selectedWsNode === "runtime:artifacts"
-                        ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                        : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>artifacts.json</span>
-                    <span className="text-[10px] text-zinc-400">
-                      {hw?.artifactsManifest.length}
-                    </span>
-                  </button>
-                )}
-                {(hw?.lifecycleEvents?.length || 0) > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedWsNode("runtime:lifecycle")}
-                    className={cn(
-                      "w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between cursor-pointer",
-                      selectedWsNode === "runtime:lifecycle"
-                        ? "bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold"
-                        : "hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                    )}
-                  >
-                    <span>lifecycle.jsonl</span>
-                    <span className="text-[10px] text-zinc-400">
-                      {hw?.lifecycleEvents.length} events
-                    </span>
-                  </button>
                 )}
               </div>
 
@@ -1475,7 +1690,7 @@ export function TrialDetailView({
                 <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
                   <a
                     href={artifactDownloadUrl(trajDownloadFile.storageRoot, trajDownloadFile.relPath)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 px-3 py-2 text-[11px] font-medium text-zinc-700 dark:text-zinc-200"
+                    className="lv-btn-secondary w-full inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-medium"
                   >
                     <RiDownload2Line className="w-3.5 h-3.5" />
                     Download Raw trajectory.json ({formatBytes(trajDownloadFile.sizeBytes)})
@@ -1487,7 +1702,14 @@ export function TrialDetailView({
 
           {/* Right: Agent Workspace File Viewer */}
           <div className="lg:col-span-8 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-            {selectedWorkFile ? (
+            {selectedPkgNode ? (
+              <HarborNodePreviewPane
+                node={selectedPkgNode}
+                mode={mode}
+                rootPrefix={matchedTaskPkg?.rootPath || "user_workspace/tasks/example"}
+                pdfToggleLayoutId="trial-pkg-pdf-toggle"
+              />
+            ) : selectedWorkFile ? (
               <div>
                 <div className="px-5 py-3.5 border-b border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-zinc-900/60 flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -1527,7 +1749,7 @@ export function TrialDetailView({
                       <button
                         type="button"
                         onClick={() => handleCopy(selectedWorkFile.id, selectedWorkFile.previewText!)}
-                        className="inline-flex items-center gap-1 rounded-full border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1 text-[11px] font-medium hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer"
+                        className="lv-btn-secondary inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium cursor-pointer"
                       >
                         {copiedFileId === selectedWorkFile.id ? (
                           <RiCheckLine className="w-3.5 h-3.5 text-emerald-600" />
@@ -1546,7 +1768,7 @@ export function TrialDetailView({
                             selectedWorkFile.storageRoot,
                             selectedWorkFile.relPath
                           )}
-                          className="inline-flex items-center gap-1 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 px-3 py-1 text-[11px] font-medium"
+                          className="lv-btn-primary inline-flex items-center gap-1 rounded-full px-3 py-1 text-[11px] font-medium"
                         >
                           <RiDownload2Line className="w-3.5 h-3.5" />
                           Download
@@ -1573,30 +1795,42 @@ export function TrialDetailView({
                             selectedWorkFile.relPath &&
                             selectedWorkFile.storageRoot &&
                             selectedWorkFile.previewText && (
-                              <div className="inline-flex items-center rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0.5 text-[11px] font-mono">
+                              <div className="relative inline-flex items-center rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0.5 text-[11px] font-mono">
                                 <button
                                   type="button"
                                   onClick={() => setTrialPdfViewMode("embed")}
                                   className={cn(
-                                    "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                    "relative px-2.5 py-0.5 rounded-full cursor-pointer transition",
                                     trialPdfViewMode === "embed"
-                                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                      ? "text-white dark:text-zinc-950 font-semibold"
                                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                                   )}
                                 >
-                                  PDF View
+                                  {trialPdfViewMode === "embed" && (
+                                    <SlidingPill
+                                      layoutId="trial-pdf-toggle"
+                                      className="bg-zinc-950 dark:bg-white"
+                                    />
+                                  )}
+                                  <span className="relative z-10">PDF View</span>
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => setTrialPdfViewMode("text")}
                                   className={cn(
-                                    "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                    "relative px-2.5 py-0.5 rounded-full cursor-pointer transition",
                                     trialPdfViewMode === "text"
-                                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                      ? "text-white dark:text-zinc-950 font-semibold"
                                       : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
                                   )}
                                 >
-                                  Extracted Text
+                                  {trialPdfViewMode === "text" && (
+                                    <SlidingPill
+                                      layoutId="trial-pdf-toggle"
+                                      className="bg-zinc-950 dark:bg-white"
+                                    />
+                                  )}
+                                  <span className="relative z-10">Extracted Text</span>
                                 </button>
                               </div>
                             )}

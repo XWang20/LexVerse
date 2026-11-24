@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { motion } from "motion/react";
 import {
   RiSearchLine,
   RiExternalLinkLine,
@@ -18,7 +19,7 @@ import {
   BENCHMARKS,
   RuntimeMode,
 } from "@/lib/lexverse-data";
-import { cn, TerminalSnippet } from "./magic-ui";
+import { SlidingPill, cn, getBenchmarkTone, TerminalSnippet } from "./magic-ui";
 import { ComposerPreset } from "./experiment-composer";
 import type { JobsNavTarget } from "./jobs-explorer";
 
@@ -51,7 +52,7 @@ function JobConfigPanel({
           <button
             type="button"
             onClick={onCopy}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-2 py-0.5 text-zinc-600 dark:text-zinc-300 hover:text-zinc-950 dark:hover:text-white cursor-pointer"
+            className="lv-btn-secondary inline-flex items-center gap-1 rounded-md px-2 py-0.5 cursor-pointer"
           >
             {copied ? <RiCheckLine className="w-3 h-3 text-emerald-600" /> : <RiFileCopyLine className="w-3 h-3" />}
             <span>{copied ? "Copied" : "Copy"}</span>
@@ -175,7 +176,7 @@ export function TasksView({
           <button
             type="button"
             onClick={() => onOpenComposer()}
-            className="inline-flex items-center gap-1.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 px-4 py-2 text-xs font-medium transition cursor-pointer"
+            className="lv-btn-primary inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium cursor-pointer"
           >
             <RiPlayCircleLine className="w-4 h-4" />
             <span>{mode === "serve" ? "Configure & Run Task" : "CLI Config Builder"}</span>
@@ -199,21 +200,25 @@ export function TasksView({
                 { id: "all", label: "All Tasks" },
                 { id: "benchmarks", label: "Benchmarks (9)" },
                 { id: "user", label: "User Tasks" },
-              ].map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setCategoryFilter(c.id as any)}
-                  className={cn(
-                    "px-3 py-1 rounded-full transition cursor-pointer",
-                    categoryFilter === c.id
-                      ? "bg-white dark:bg-zinc-800 text-zinc-950 dark:text-white shadow-2xs font-semibold"
-                      : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
-                  )}
-                >
-                  {c.label}
-                </button>
-              ))}
+              ].map((c) => {
+                const active = categoryFilter === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => setCategoryFilter(c.id as any)}
+                    className={cn(
+                      "relative px-3 py-1 rounded-full transition cursor-pointer",
+                      active
+                        ? "text-zinc-950 dark:text-white font-semibold"
+                        : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
+                    )}
+                  >
+                    {active && <SlidingPill layoutId="tasks-category-filter" />}
+                    <span className="relative z-10">{c.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -243,11 +248,16 @@ export function TasksView({
               const defaultAgent = b.executionModes.includes("Vanilla")
                 ? "vanilla"
                 : b.executionModes[0].toLowerCase();
+              const tone = getBenchmarkTone(b.id);
+              const scalePct = Math.max(
+                14,
+                Math.min(100, Math.round((Math.log10(b.samples + 1) / Math.log10(15000)) * 100))
+              );
 
               return (
                 <div
                   key={b.id}
-                  className="min-w-0 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 flex flex-col justify-between gap-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+                  className="relative min-w-0 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5 flex flex-col justify-between gap-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700 hover:shadow-[0_8px_20px_-10px_rgba(15,23,42,0.12)]"
                 >
                   <div className="space-y-3 min-w-0">
                     <div className="flex items-start justify-between gap-3">
@@ -256,7 +266,7 @@ export function TasksView({
                           <h3 className="text-base font-semibold text-zinc-950 dark:text-white">
                             {b.name}
                           </h3>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400">
+                          <span className={cn("text-[10px] font-mono px-2 py-0.5 rounded-full font-medium", tone.badge)}>
                             {b.category}
                           </span>
                         </div>
@@ -277,10 +287,19 @@ export function TasksView({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono">
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
-                        {b.samples.toLocaleString()} samples
+                      <span className={cn("inline-flex items-center gap-2 px-2 py-0.5 rounded-md font-medium tabular-nums", tone.badge)}>
+                        <span>{b.samples.toLocaleString()} samples</span>
+                        <span
+                          aria-hidden="true"
+                          className="w-8 h-1 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden inline-block"
+                        >
+                          <span
+                            className={cn("block h-full rounded-full", tone.bar)}
+                            style={{ width: `${scalePct}%` }}
+                          />
+                        </span>
                       </span>
-                      <span className="px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300">
+                      <span className="px-2 py-0.5 rounded-md border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 tabular-nums">
                         {tasksList.length} task types
                       </span>
                       {b.executionModes.map((m) => (
@@ -344,7 +363,12 @@ export function TasksView({
                         </div>
 
                         {tasksExpanded && tasksList.length > 0 && (
-                          <div className="mt-2.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/50 p-3 max-h-56 overflow-y-auto space-y-1.5">
+                          <motion.div
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.18 }}
+                            className="mt-2.5 rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/50 p-3 max-h-56 overflow-y-auto space-y-1.5"
+                          >
                             {tasksList.map((t: any) => {
                               const readable = BENCHMARK_TASK_NAMES[b.id]?.[t.id];
                               return (
@@ -373,23 +397,29 @@ export function TasksView({
                                 </div>
                               );
                             })}
-                          </div>
+                          </motion.div>
                         )}
 
                         {configExpanded && tpl && (
-                          <JobConfigPanel
-                            tpl={tpl}
-                            copied={copiedConfigKey === b.id}
-                            mode={mode}
-                            onCopy={() => copyJobYaml(b.id, tpl.yaml)}
-                            onLoadComposer={() =>
-                              onOpenComposer({
-                                targetType: "benchmark",
-                                targetName: b.id,
-                                agent: defaultAgent,
-                              })
-                            }
-                          />
+                          <motion.div
+                            initial={{ opacity: 0, y: -4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.18 }}
+                          >
+                            <JobConfigPanel
+                              tpl={tpl}
+                              copied={copiedConfigKey === b.id}
+                              mode={mode}
+                              onCopy={() => copyJobYaml(b.id, tpl.yaml)}
+                              onLoadComposer={() =>
+                                onOpenComposer({
+                                  targetType: "benchmark",
+                                  targetName: b.id,
+                                  agent: defaultAgent,
+                                })
+                              }
+                            />
+                          </motion.div>
                         )}
                       </div>
                     )}
@@ -400,14 +430,17 @@ export function TasksView({
                       Metric: {b.metricName}
                     </span>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 shrink-0">
                       {hasJobsView && (
                         <button
                           type="button"
                           onClick={() => onOpenJobsTarget({ taskName: b.id })}
-                          className="px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300 font-medium transition cursor-pointer"
+                          className="group/btn lv-btn-tertiary inline-flex items-center gap-1 px-3 py-1 rounded-full font-medium cursor-pointer"
                         >
-                          View Jobs &amp; Results →
+                          <span>View Jobs &amp; Results</span>
+                          <span className="inline-block transition-transform duration-150 group-hover/btn:translate-x-0.5">
+                            →
+                          </span>
                         </button>
                       )}
                       <button
@@ -421,7 +454,7 @@ export function TasksView({
                               : b.executionModes[0].toLowerCase(),
                           })
                         }
-                        className="px-3 py-1 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 font-medium transition cursor-pointer"
+                        className="lv-btn-secondary px-3 py-1 rounded-full font-medium cursor-pointer"
                       >
                         {mode === "serve" ? "Run Benchmark" : "CLI Config"}
                       </button>
@@ -449,7 +482,7 @@ export function TasksView({
           {filteredUserTasks.map((ex) => (
             <div
               key={ex.groupName}
-              className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-6 space-y-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+              className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-gradient-to-br from-emerald-500/[0.035] via-white to-indigo-500/[0.03] dark:from-emerald-500/[0.06] dark:via-zinc-950 dark:to-indigo-500/[0.05] p-6 space-y-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -467,7 +500,7 @@ export function TasksView({
                   </p>
                 </div>
 
-                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold">
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-500/20 tabular-nums">
                   {ex.fullCount + ex.baseCount} Completed Traces
                 </span>
               </div>
@@ -481,13 +514,13 @@ export function TasksView({
                     {(ex.inputFiles || []).map((f: string) => (
                       <span
                         key={f}
-                        className="px-2.5 py-1 rounded-md bg-zinc-100 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                        className="px-2.5 py-1 rounded-md bg-white/90 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
                       >
                         {f}
                       </span>
                     ))}
                   </div>
-                  <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed bg-zinc-50/70 dark:bg-zinc-900/50 p-3 rounded-xl border border-zinc-200/70 dark:border-zinc-800">
+                  <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed bg-white/80 dark:bg-zinc-900/60 p-3 rounded-xl border border-zinc-200/70 dark:border-zinc-800">
                     {ex.instructionPreview}
                   </p>
                 </div>
@@ -496,17 +529,28 @@ export function TasksView({
                   <div className="text-[11px] font-mono uppercase text-zinc-400">
                     Verifier Rubric (100 Points Total)
                   </div>
-                  <div className="rounded-xl border border-zinc-200/70 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800/70 text-xs">
-                    {(ex.rubricDimensions || []).map((dim: any) => (
-                      <div key={dim.id} className="p-2.5 flex items-center justify-between gap-2">
-                        <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                          {RUBRIC_TITLES[dim.id] || dim.id}
-                        </span>
-                        <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                          {dim.maxScore} pts
-                        </span>
-                      </div>
-                    ))}
+                  <div className="rounded-xl border border-zinc-200/70 dark:border-zinc-800 bg-white/85 dark:bg-zinc-950/80 divide-y divide-zinc-100 dark:divide-zinc-800/70 text-xs overflow-hidden">
+                    {(ex.rubricDimensions || []).map((dim: any) => {
+                      const pct = Math.min(100, Math.max(5, Number(dim.maxScore) || 0));
+                      return (
+                        <div key={dim.id} className="p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                              {RUBRIC_TITLES[dim.id] || dim.id}
+                            </span>
+                            <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                              {dim.maxScore} pts
+                            </span>
+                          </div>
+                          <div className="h-1 w-full rounded-full bg-zinc-100 dark:bg-zinc-900 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -516,14 +560,14 @@ export function TasksView({
                   <button
                     type="button"
                     onClick={() => onOpenJobsTarget({ taskName: "example" })}
-                    className="px-3.5 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 font-medium cursor-pointer transition whitespace-nowrap"
                   >
                     View Example Jobs ({ex.fullCount + ex.baseCount}) →
                   </button>
                   <button
                     type="button"
                     onClick={onOpenExampleShowcase}
-                    className="px-3.5 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300 font-medium cursor-pointer"
+                    className="lv-btn-secondary px-3.5 py-1.5 rounded-full font-medium cursor-pointer"
                   >
                     Inspect Task Package →
                   </button>
@@ -532,10 +576,10 @@ export function TasksView({
                       type="button"
                       onClick={() => setExampleConfigOpen((v) => !v)}
                       className={cn(
-                        "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border font-medium transition cursor-pointer",
+                        "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full font-medium transition cursor-pointer whitespace-nowrap",
                         exampleConfigOpen
-                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : "border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                          ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                          : "lv-btn-secondary"
                       )}
                     >
                       <RiFileCodeLine className="w-3.5 h-3.5" />
@@ -559,29 +603,35 @@ export function TasksView({
                       enableLaws: true,
                     })
                   }
-                  className="px-4 py-1.5 rounded-full bg-zinc-950 hover:bg-zinc-800 text-white dark:bg-white dark:text-zinc-950 font-medium cursor-pointer"
+                  className="lv-btn-primary px-4 py-1.5 rounded-full font-medium cursor-pointer"
                 >
                   {mode === "serve" ? "Run Example Task →" : "CLI Config →"}
                 </button>
               </div>
 
               {exampleConfigOpen && templatesByName[ex.groupName] && (
-                <JobConfigPanel
-                  tpl={templatesByName[ex.groupName]}
-                  copied={copiedConfigKey === ex.groupName}
-                  mode={mode}
-                  onCopy={() =>
-                    copyJobYaml(ex.groupName, templatesByName[ex.groupName].yaml)
-                  }
-                  onLoadComposer={() =>
-                    onOpenComposer({
-                      targetType: "user",
-                      targetName: "user_workspace/tasks/example",
-                      agent: "vanilla",
-                      enableLaws: true,
-                    })
-                  }
-                />
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <JobConfigPanel
+                    tpl={templatesByName[ex.groupName]}
+                    copied={copiedConfigKey === ex.groupName}
+                    mode={mode}
+                    onCopy={() =>
+                      copyJobYaml(ex.groupName, templatesByName[ex.groupName].yaml)
+                    }
+                    onLoadComposer={() =>
+                      onOpenComposer({
+                        targetType: "user",
+                        targetName: "user_workspace/tasks/example",
+                        agent: "vanilla",
+                        enableLaws: true,
+                      })
+                    }
+                  />
+                </motion.div>
               )}
             </div>
           ))}
@@ -609,7 +659,15 @@ export function TasksView({
         </div>
 
         <div className="lg:col-span-7">
-          <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/70 text-zinc-800 dark:text-zinc-200 p-4 text-[11px] font-mono leading-relaxed overflow-x-auto">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950 text-zinc-200 overflow-hidden shadow-xs">
+            <div className="px-4 py-2 border-b border-zinc-800/90 flex items-center justify-between text-[10px] font-mono text-zinc-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500/80" />
+                contract-review/ · Harbor Spec
+              </span>
+              <span>Offline Sandbox</span>
+            </div>
+            <pre className="p-4 text-[11px] font-mono leading-relaxed overflow-x-auto text-zinc-200">
 {`user_workspace/tasks/contract-review/
 ├── task.toml        # Artifacts, network policy & verifier spec
 ├── instruction.md   # Legal prompt & required deliverable schema
@@ -619,7 +677,8 @@ export function TasksView({
 └── tests/
     ├── Dockerfile   # Isolated judge container
     └── grade.py     # Deterministic + Rubric evaluation`}
-          </pre>
+            </pre>
+          </div>
         </div>
       </section>
     </div>
