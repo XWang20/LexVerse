@@ -361,9 +361,8 @@ const examplePdfSrc = path.join(exampleTaskDir, "tests/reference/case.pdf");
 const publicFilesOut = path.resolve(import.meta.dir, "../public/files/example");
 fs.rmSync(publicFilesOut, { recursive: true, force: true });
 if (canRead(examplePdfSrc)) {
-  const dest = path.join(publicFilesOut, "tests/reference/case.pdf");
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.copyFileSync(examplePdfSrc, dest);
+  fs.mkdirSync(publicFilesOut, { recursive: true });
+  fs.copyFileSync(examplePdfSrc, path.join(publicFilesOut, "tests__reference__case.pdf"));
 }
 
 // 6. Scan configs/jobs/*.yaml

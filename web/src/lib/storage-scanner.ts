@@ -3601,7 +3601,7 @@ function buildHarborTree(
         content = extractPdfPreviewText(abs, 20000) ?? undefined;
         previewKind = "pdf";
         if (scope === "task") {
-          staticUrl = `/files/example/${relPath}`;
+          staticUrl = `/files/example/${relPath.replace(/\//g, "__")}`;
         }
         previewable = Boolean(content || staticUrl);
       } else if (isHarborTextFile(name, ext) && st.size <= 24 * 1024) {
