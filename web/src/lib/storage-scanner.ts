@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -2062,19 +2063,17 @@ function decodeXmlEntities(str: string): string {
     .replace(/&apos;/g, "'");
 }
 
-/**
- * Extracts readable paragraph text from a .docx ZIP archive using pure node:zlib
- * (no external dependencies or subprocesses).
- */
-export function extractDocxPreviewText(absPath: string, maxChars = 14000): string | null {
+function readZipEntries(
+  absPath: string,
+  predicate: (fileName: string) => boolean
+): Map<string, Buffer> | null {
   try {
     if (!canRead(absPath)) return null;
     const st = safeStat(absPath);
-    if (!st || !st.isFile() || st.size > 8 * 1024 * 1024) return null;
+    if (!st || !st.isFile() || st.size > 12 * 1024 * 1024) return null;
     const buf = fs.readFileSync(absPath);
     if (buf.length < 22) return null;
 
-    // Locate End of Central Directory signature (0x06054b50)
     const minOff = Math.max(0, buf.length - 65557);
     let eocdOff = -1;
     for (let i = buf.length - 22; i >= minOff; i--) {
@@ -2087,6 +2086,7 @@ export function extractDocxPreviewText(absPath: string, maxChars = 14000): strin
 
     const totalEntries = buf.readUInt16LE(eocdOff + 10);
     let cdOff = buf.readUInt32LE(eocdOff + 16);
+    const out = new Map<string, Buffer>();
 
     for (let e = 0; e < totalEntries && cdOff + 46 <= eocdOff; e++) {
       if (buf.readUInt32LE(cdOff) !== 0x02014b50) break;
@@ -2099,43 +2099,207 @@ export function extractDocxPreviewText(absPath: string, maxChars = 14000): strin
       const fileName = buf.subarray(cdOff + 46, cdOff + 46 + nameLen).toString("utf8");
       cdOff += 46 + nameLen + extraLen + commentLen;
 
-      if (fileName !== "word/document.xml") continue;
+      if (!predicate(fileName)) continue;
       if (localHeaderOff + 30 > buf.length || buf.readUInt32LE(localHeaderOff) !== 0x04034b50) {
-        return null;
+        continue;
       }
       const lNameLen = buf.readUInt16LE(localHeaderOff + 26);
       const lExtraLen = buf.readUInt16LE(localHeaderOff + 28);
       const dataStart = localHeaderOff + 30 + lNameLen + lExtraLen;
-      if (dataStart + compressedSize > buf.length) return null;
+      if (dataStart + compressedSize > buf.length) continue;
 
       const compressed = buf.subarray(dataStart, dataStart + compressedSize);
-      const xmlBuf =
+      const content =
         compression === 0
           ? compressed
           : compression === 8
           ? zlib.inflateRawSync(compressed)
           : null;
-      if (!xmlBuf) return null;
+      if (content) out.set(fileName, content);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
 
-      const xml = xmlBuf
-        .toString("utf8")
-        .replace(/<w:tab[^>]*\/>/g, "\t")
-        .replace(/<w:br[^>]*\/>/g, "\n");
+/**
+ * Extracts readable paragraph text from a .docx ZIP archive using pure node:zlib
+ * (no external dependencies or subprocesses).
+ */
+export function extractDocxPreviewText(absPath: string, maxChars = 14000): string | null {
+  try {
+    const entries = readZipEntries(absPath, (name) => name === "word/document.xml");
+    const xmlBuf = entries?.get("word/document.xml");
+    if (!xmlBuf) return null;
 
-      const paragraphs: string[] = [];
-      for (const block of xml.split(/<\/w:p>/)) {
-        const runs = Array.from(block.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)).map((m) =>
-          decodeXmlEntities(m[1])
-        );
-        const line = runs.join("").trim();
-        if (line) paragraphs.push(line);
+    const xml = xmlBuf
+      .toString("utf8")
+      .replace(/<w:tab[^>]*\/>/g, "\t")
+      .replace(/<w:br[^>]*\/>/g, "\n");
+
+    const paragraphs: string[] = [];
+    for (const block of xml.split(/<\/w:p>/)) {
+      const runs = Array.from(block.matchAll(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g)).map((m) =>
+        decodeXmlEntities(m[1])
+      );
+      const line = runs.join("").trim();
+      if (line) paragraphs.push(line);
+    }
+
+    if (!paragraphs.length) return null;
+    const joined = paragraphs.join("\n\n");
+    return joined.length > maxChars ? joined.slice(0, maxChars) + "\n… [truncated]" : joined;
+  } catch {
+    return null;
+  }
+}
+
+function colRefToIndex(ref: string): number {
+  const letters = ref.match(/^[A-Z]+/)?.[0] || "A";
+  let idx = 0;
+  for (let i = 0; i < letters.length; i++) {
+    idx = idx * 26 + (letters.charCodeAt(i) - 64);
+  }
+  return Math.max(0, idx - 1);
+}
+
+/**
+ * Extracts sheets & plain-text TSV summary from a .xlsx ZIP archive using pure node:zlib.
+ */
+export function extractXlsxPreview(
+  absPath: string,
+  maxRows = 120
+): { sheets: Array<{ name: string; rows: string[][] }>; text: string } | null {
+  try {
+    const entries = readZipEntries(
+      absPath,
+      (name) =>
+        name === "xl/sharedStrings.xml" ||
+        name === "xl/workbook.xml" ||
+        /^xl\/worksheets\/sheet\d+\.xml$/.test(name)
+    );
+    if (!entries || entries.size === 0) return null;
+
+    const sharedStrings: string[] = [];
+    const ssBuf = entries.get("xl/sharedStrings.xml");
+    if (ssBuf) {
+      const ssXml = ssBuf.toString("utf8");
+      for (const si of ssXml.matchAll(/<(?:[a-zA-Z_][\w-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?si>/g)) {
+        const txt = Array.from(
+          si[1].matchAll(/<(?:[a-zA-Z_][\w-]*:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?t>/g)
+        )
+          .map((m) => decodeXmlEntities(m[1]))
+          .join("");
+        sharedStrings.push(txt);
+      }
+    }
+
+    const sheetNames: string[] = [];
+    const wbBuf = entries.get("xl/workbook.xml");
+    if (wbBuf) {
+      const wbXml = wbBuf.toString("utf8");
+      for (const m of wbXml.matchAll(/<(?:[a-zA-Z_][\w-]*:)?sheet\b[^>]*name="([^"]+)"/g)) {
+        sheetNames.push(decodeXmlEntities(m[1]));
+      }
+    }
+
+    const sheetFiles = Array.from(entries.keys())
+      .filter((k) => /^xl\/worksheets\/sheet\d+\.xml$/.test(k))
+      .sort((a, b) => {
+        const na = Number(a.match(/sheet(\d+)\.xml$/)?.[1] || 0);
+        const nb = Number(b.match(/sheet(\d+)\.xml$/)?.[1] || 0);
+        return na - nb;
+      });
+
+    const sheets: Array<{ name: string; rows: string[][] }> = [];
+    const textBlocks: string[] = [];
+
+    for (let sIdx = 0; sIdx < sheetFiles.length; sIdx++) {
+      const xml = entries.get(sheetFiles[sIdx])!.toString("utf8");
+      const rawRows: string[][] = [];
+      let maxCols = 0;
+
+      for (const rm of xml.matchAll(/<(?:[a-zA-Z_][\w-]*:)?row\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?row>/g)) {
+        if (rawRows.length >= maxRows) break;
+        const rowCells: string[] = [];
+        for (const cm of rm[1].matchAll(
+          /<(?:[a-zA-Z_][\w-]*:)?c\b([^>]*)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?c>)/g
+        )) {
+          const attrs = cm[1] || "";
+          const inner = cm[2] || "";
+          const ref = attrs.match(/\br="([A-Z]+\d+)"/)?.[1];
+          const type = attrs.match(/\bt="([^"]+)"/)?.[1] || "";
+          const colIdx = ref ? colRefToIndex(ref) : rowCells.length;
+
+          let val = "";
+          if (type === "inlineStr") {
+            val = Array.from(
+              inner.matchAll(/<(?:[a-zA-Z_][\w-]*:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?t>/g)
+            )
+              .map((m) => decodeXmlEntities(m[1]))
+              .join("");
+          } else {
+            const vMatch = inner.match(
+              /<(?:[a-zA-Z_][\w-]*:)?v\b[^>]*>([\s\S]*?)<\/(?:[a-zA-Z_][\w-]*:)?v>/
+            );
+            const rawVal = vMatch ? decodeXmlEntities(vMatch[1]).trim() : "";
+            if (type === "s") {
+              val = sharedStrings[Number(rawVal)] ?? rawVal;
+            } else if (type === "b") {
+              val = rawVal === "1" ? "TRUE" : "FALSE";
+            } else if (type === "d") {
+              val = rawVal.replace(/T00:00:00(?:\.000)?Z$/, "");
+            } else {
+              val = rawVal;
+            }
+          }
+
+          while (rowCells.length <= colIdx) rowCells.push("");
+          rowCells[colIdx] = val.trim();
+        }
+
+        while (rowCells.length > 0 && rowCells[rowCells.length - 1] === "") {
+          rowCells.pop();
+        }
+        if (rowCells.some((c) => c !== "")) {
+          maxCols = Math.max(maxCols, rowCells.length);
+          rawRows.push(rowCells);
+        }
       }
 
-      if (!paragraphs.length) return null;
-      const joined = paragraphs.join("\n\n");
-      return joined.length > maxChars ? joined.slice(0, maxChars) + "\n… [truncated]" : joined;
+      if (rawRows.length > 0) {
+        const normalized = rawRows.map((r) => {
+          const padded = [...r];
+          while (padded.length < maxCols) padded.push("");
+          return padded;
+        });
+        const name = sheetNames[sIdx] || `Sheet${sIdx + 1}`;
+        sheets.push({ name, rows: normalized });
+        textBlocks.push(`[${name}]\n` + normalized.map((r) => r.join("\t")).join("\n"));
+      }
     }
+
+    if (!sheets.length) return null;
+    return { sheets, text: textBlocks.join("\n\n") };
+  } catch {
     return null;
+  }
+}
+
+export function extractPdfPreviewText(absPath: string, maxChars = 16000): string | null {
+  try {
+    if (!canRead(absPath)) return null;
+    const st = safeStat(absPath);
+    if (!st || !st.isFile() || st.size > 16 * 1024 * 1024) return null;
+    const txt = execFileSync("pdftotext", ["-layout", absPath, "-"], {
+      timeout: 5000,
+      maxBuffer: 2 * 1024 * 1024,
+      encoding: "utf8",
+    });
+    const clean = (txt || "").replace(/\f/g, "\n").trim();
+    if (!clean) return null;
+    return clean.length > maxChars ? clean.slice(0, maxChars) + "\n… [truncated]" : clean;
   } catch {
     return null;
   }
@@ -2145,6 +2309,12 @@ function readWorkspaceFilePreview(absPath: string, sizeBytes: number, maxChars =
   const ext = path.extname(absPath).toLowerCase();
   if (ext === ".docx") {
     return extractDocxPreviewText(absPath, maxChars) ?? undefined;
+  }
+  if (ext === ".xlsx") {
+    return extractXlsxPreview(absPath)?.text ?? undefined;
+  }
+  if (ext === ".pdf") {
+    return extractPdfPreviewText(absPath, maxChars) ?? undefined;
   }
   if (sizeBytes > 256 * 1024) return undefined;
   try {
@@ -3408,8 +3578,38 @@ function buildHarborTree(
       });
     } else if (st.isFile()) {
       const ext = path.extname(name);
-      const textLike = isHarborTextFile(name, ext);
-      const previewable = textLike && st.size <= 24 * 1024;
+      const lowerExt = ext.toLowerCase();
+      let previewable = false;
+      let previewKind: HarborTreeNode["previewKind"] = undefined;
+      let content: string | undefined = undefined;
+      let tableSheets: HarborTreeNode["tableSheets"] = undefined;
+      let staticUrl: string | undefined = undefined;
+
+      if (lowerExt === ".docx") {
+        content = extractDocxPreviewText(abs, 24000) ?? undefined;
+        previewable = Boolean(content);
+        previewKind = "docx";
+      } else if (lowerExt === ".xlsx") {
+        const parsed = extractXlsxPreview(abs);
+        if (parsed) {
+          content = parsed.text;
+          tableSheets = parsed.sheets;
+          previewable = true;
+        }
+        previewKind = "xlsx";
+      } else if (lowerExt === ".pdf") {
+        content = extractPdfPreviewText(abs, 20000) ?? undefined;
+        previewKind = "pdf";
+        if (scope === "task") {
+          staticUrl = `/files/example/${relPath}`;
+        }
+        previewable = Boolean(content || staticUrl);
+      } else if (isHarborTextFile(name, ext) && st.size <= 24 * 1024) {
+        previewable = true;
+        previewKind = "text";
+        content = safeReadText(abs, 24 * 1024) ?? undefined;
+      }
+
       nodes.push({
         name,
         relPath,
@@ -3417,7 +3617,10 @@ function buildHarborTree(
         sizeBytes: st.size,
         ext,
         previewable,
-        content: previewable ? safeReadText(abs, 24 * 1024) ?? undefined : undefined,
+        previewKind,
+        content,
+        tableSheets,
+        staticUrl,
         downloadable: true,
         storageRoot,
         scope,

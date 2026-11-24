@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const scope = searchParams.get("scope");
   const relPath = searchParams.get("path") || "";
   const download = searchParams.get("download") === "1";
+  const inline = searchParams.get("inline") === "1";
 
   if ((scope !== "task" && scope !== "config") || !relPath) {
     return NextResponse.json(
@@ -45,16 +46,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "File exceeds limit" }, { status: 413 });
   }
 
-  if (download) {
+  if (download || inline) {
     const ext = path.extname(resolved.absPath).toLowerCase();
     const contentType = MIME_MAP[ext] || "application/octet-stream";
     const fileName = path.basename(resolved.absPath);
     const bytes = fs.readFileSync(resolved.absPath);
+    const disp = inline && !download ? "inline" : "attachment";
     return new NextResponse(bytes, {
       status: 200,
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        "Content-Disposition": `${disp}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
         "Content-Length": String(bytes.length),
         "Cache-Control": "no-store",
       },

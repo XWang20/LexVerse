@@ -357,6 +357,15 @@ if (canRead(path.join(exampleTaskDir, "task.toml"))) {
   });
 }
 
+const examplePdfSrc = path.join(exampleTaskDir, "tests/reference/case.pdf");
+const publicFilesOut = path.resolve(import.meta.dir, "../public/files/example");
+fs.rmSync(publicFilesOut, { recursive: true, force: true });
+if (canRead(examplePdfSrc)) {
+  const dest = path.join(publicFilesOut, "tests/reference/case.pdf");
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(examplePdfSrc, dest);
+}
+
 // 6. Scan configs/jobs/*.yaml
 const configsDir = path.join(REPO_ROOT, "configs/jobs");
 const jobConfigs: Array<{ name: string; file: string; yaml: string }> = [];

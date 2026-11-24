@@ -271,7 +271,10 @@ export interface HarborTreeNode {
   sizeBytes: number;
   ext: string;
   previewable: boolean;
+  previewKind?: "text" | "docx" | "xlsx" | "pdf";
   content?: string;
+  tableSheets?: Array<{ name: string; rows: string[][] }>;
+  staticUrl?: string;
   downloadable: boolean;
   storageRoot: StorageRootId;
   scope: "task" | "config";

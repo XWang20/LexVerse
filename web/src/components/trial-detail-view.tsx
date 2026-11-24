@@ -62,11 +62,11 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function artifactDownloadUrl(storageRoot: StorageRootId, relPath: string): string {
+function artifactDownloadUrl(storageRoot: StorageRootId, relPath: string, inline = false): string {
   return withBasePath(
     `/api/live/artifact?storageRoot=${encodeURIComponent(
       storageRoot
-    )}&storagePath=${encodeURIComponent(relPath)}`
+    )}&storagePath=${encodeURIComponent(relPath)}${inline ? "&inline=1" : ""}`
   );
 }
 
@@ -116,6 +116,7 @@ export function TrialDetailView({
   const [selectedWsNode, setSelectedWsNode] = useState<string>("virtual:answer");
   const [skillSearch, setSkillSearch] = useState("");
   const [copiedFileId, setCopiedFileId] = useState<string | null>(null);
+  const [trialPdfViewMode, setTrialPdfViewMode] = useState<"embed" | "text">("embed");
 
   const detailCacheRef = useRef<Record<string, StoredTrialDetail>>({});
 
@@ -1288,6 +1289,9 @@ export function TrialDetailView({
               <div className="text-[11px] font-mono text-zinc-400 truncate mt-0.5">
                 {bundle.storageRoot}:/{bundle.storagePath}
               </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1.5 leading-snug">
+                Per-trial sandbox snapshot: deliverables written, mounted skills &amp; inputs accessed in this run.
+              </p>
             </div>
 
             <div className="space-y-4 text-xs font-mono">
@@ -1552,7 +1556,91 @@ export function TrialDetailView({
                 </div>
 
                 <div className="p-5">
-                  {selectedWorkFile.previewText ? (
+                  {(selectedWorkFile.format === "pdf" || selectedWorkFile.name.toLowerCase().endsWith(".pdf")) &&
+                  ((mode === "serve" &&
+                    selectedWorkFile.downloadable &&
+                    selectedWorkFile.relPath &&
+                    selectedWorkFile.storageRoot) ||
+                    selectedWorkFile.previewText) ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono text-zinc-400">
+                          PDF Artifact ({selectedWorkFile.name})
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {mode === "serve" &&
+                            selectedWorkFile.downloadable &&
+                            selectedWorkFile.relPath &&
+                            selectedWorkFile.storageRoot &&
+                            selectedWorkFile.previewText && (
+                              <div className="inline-flex items-center rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0.5 text-[11px] font-mono">
+                                <button
+                                  type="button"
+                                  onClick={() => setTrialPdfViewMode("embed")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                    trialPdfViewMode === "embed"
+                                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                      : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
+                                  )}
+                                >
+                                  PDF View
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setTrialPdfViewMode("text")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                    trialPdfViewMode === "text"
+                                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                      : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
+                                  )}
+                                >
+                                  Extracted Text
+                                </button>
+                              </div>
+                            )}
+                          {mode === "serve" &&
+                            selectedWorkFile.downloadable &&
+                            selectedWorkFile.relPath &&
+                            selectedWorkFile.storageRoot && (
+                              <a
+                                href={artifactDownloadUrl(
+                                  selectedWorkFile.storageRoot,
+                                  selectedWorkFile.relPath,
+                                  true
+                                )}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline"
+                              >
+                                Open PDF ↗
+                              </a>
+                            )}
+                        </div>
+                      </div>
+
+                      {mode === "serve" &&
+                      selectedWorkFile.downloadable &&
+                      selectedWorkFile.relPath &&
+                      selectedWorkFile.storageRoot &&
+                      trialPdfViewMode === "embed" ? (
+                        <iframe
+                          src={artifactDownloadUrl(
+                            selectedWorkFile.storageRoot,
+                            selectedWorkFile.relPath,
+                            true
+                          )}
+                          title={selectedWorkFile.name}
+                          className="w-full h-[560px] rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white"
+                        />
+                      ) : selectedWorkFile.previewText ? (
+                        <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-4 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto max-h-[640px] leading-relaxed whitespace-pre-wrap">
+                          {selectedWorkFile.previewText}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ) : selectedWorkFile.previewText ? (
                     selectedWorkFile.format === "docx" ? (
                       <div className="space-y-3">
                         <div className="text-[11px] font-mono text-zinc-400">

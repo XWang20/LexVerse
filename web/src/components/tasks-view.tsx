@@ -87,10 +87,7 @@ export function TasksView({
 }) {
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<"all" | "benchmarks" | "user">("all");
-  const [expandedPanel, setExpandedPanel] = useState<Record<string, "none" | "tasks" | "config">>({
-    plawbench: "tasks",
-    lawbench: "tasks",
-  });
+  const [expandedPanel, setExpandedPanel] = useState<Record<string, "none" | "tasks" | "config">>({});
   const [exampleConfigOpen, setExampleConfigOpen] = useState(false);
   const [copiedConfigKey, setCopiedConfigKey] = useState<string | null>(null);
 

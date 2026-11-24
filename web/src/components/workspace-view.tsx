@@ -54,12 +54,14 @@ export function HarborExampleShowcase({
     environment: true,
     "environment/inputs": true,
     tests: true,
+    "tests/reference": true,
     solution: true,
   });
   const [selectedNode, setSelectedNode] = useState<HarborTreeNode | null>(null);
   const [fetchedContent, setFetchedContent] = useState<string | null>(null);
   const [loadingFile, setLoadingFile] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [pdfViewMode, setPdfViewMode] = useState<"embed" | "text">("embed");
 
   useEffect(() => {
     if (!selectedNode && pkg?.tree?.length) {
@@ -101,6 +103,23 @@ export function HarborExampleShowcase({
   }, [selectedNode, mode]);
 
   const activeTextContent = selectedNode?.content ?? fetchedContent;
+  const activeExt = selectedNode?.ext.toLowerCase() || "";
+  const isPdf = selectedNode?.previewKind === "pdf" || activeExt === ".pdf";
+  const isDocx = selectedNode?.previewKind === "docx" || activeExt === ".docx";
+  const tableSheets = selectedNode?.tableSheets;
+  const isXlsx = (selectedNode?.previewKind === "xlsx" || activeExt === ".xlsx") && Boolean(tableSheets?.length);
+  const pdfEmbedUrl =
+    isPdf && selectedNode
+      ? mode === "serve"
+        ? withBasePath(
+            `/api/live/workspace-file?scope=${encodeURIComponent(
+              selectedNode.scope
+            )}&path=${encodeURIComponent(selectedNode.relPath)}&inline=1`
+          )
+        : selectedNode.staticUrl
+        ? withBasePath(selectedNode.staticUrl)
+        : null
+      : null;
 
   const toggleDir = (relPath: string) => {
     setExpandedDirs((prev) => ({ ...prev, [relPath]: !prev[relPath] }));
@@ -274,27 +293,141 @@ export function HarborExampleShowcase({
                 </div>
               </div>
 
-              <div className="p-5">
-                {loadingFile ? (
-                  <div className="py-10 text-center text-xs font-mono text-zinc-400">
-                    Loading package file…
-                  </div>
-                ) : activeTextContent !== undefined && activeTextContent !== null ? (
-                  <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-4 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto max-h-[480px] leading-relaxed whitespace-pre-wrap">
-                    {activeTextContent}
-                  </pre>
-                ) : (
-                  <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-8 text-center space-y-3">
-                    <RiFileTextLine className="w-8 h-8 text-indigo-500 mx-auto" />
-                    <div className="text-xs font-mono font-semibold text-zinc-950 dark:text-white">
-                      {selectedNode.name}
+                <div className="p-5">
+                  {loadingFile ? (
+                    <div className="py-10 text-center text-xs font-mono text-zinc-400">
+                      Loading package file…
                     </div>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
-                      Binary dossier or reference asset ({formatBytes(selectedNode.sizeBytes)}) mounted read-only inside the Harbor sandbox environment.
-                    </p>
-                  </div>
-                )}
-              </div>
+                  ) : isXlsx && tableSheets ? (
+                    <div className="space-y-4">
+                      <div className="text-[11px] font-mono text-zinc-400">
+                        Rendered inline from {selectedNode.name} ({tableSheets.length} sheet
+                        {tableSheets.length > 1 ? "s" : ""})
+                      </div>
+                      {tableSheets.map((sheet) => (
+                        <div
+                          key={sheet.name}
+                          className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 overflow-hidden"
+                        >
+                          <div className="px-3.5 py-2 bg-zinc-50 dark:bg-zinc-900/70 border-b border-zinc-200/70 dark:border-zinc-800 flex items-center justify-between text-[11px] font-mono">
+                            <span className="font-semibold text-zinc-800 dark:text-zinc-200">
+                              {sheet.name}
+                            </span>
+                            <span className="text-zinc-400">{sheet.rows.length} rows</span>
+                          </div>
+                          <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
+                            <table className="w-full text-left text-xs border-collapse">
+                              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/70">
+                                {sheet.rows.map((row, rIdx) => (
+                                  <tr
+                                    key={rIdx}
+                                    className={cn(
+                                      rIdx === 0 || (rIdx === 2 && row.length > 2)
+                                        ? "bg-zinc-50/80 dark:bg-zinc-900/50 font-medium text-zinc-900 dark:text-zinc-100"
+                                        : "hover:bg-zinc-50/50 dark:hover:bg-zinc-900/30 text-zinc-700 dark:text-zinc-300"
+                                    )}
+                                  >
+                                    {row.map((cell, cIdx) => (
+                                      <td
+                                        key={cIdx}
+                                        className="px-3 py-2 border-r last:border-r-0 border-zinc-100 dark:border-zinc-800/60 whitespace-nowrap tabular-nums"
+                                      >
+                                        {cell}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : isPdf && (pdfEmbedUrl || activeTextContent) ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono text-zinc-400">
+                          PDF Reference Document ({selectedNode.name})
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {pdfEmbedUrl && activeTextContent && (
+                            <div className="inline-flex items-center rounded-full border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-0.5 text-[11px] font-mono">
+                              <button
+                                type="button"
+                                onClick={() => setPdfViewMode("embed")}
+                                className={cn(
+                                  "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                  pdfViewMode === "embed"
+                                    ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                    : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
+                                )}
+                              >
+                                PDF View
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPdfViewMode("text")}
+                                className={cn(
+                                  "px-2.5 py-0.5 rounded-full cursor-pointer transition",
+                                  pdfViewMode === "text"
+                                    ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 font-semibold"
+                                    : "text-zinc-500 hover:text-zinc-950 dark:hover:text-white"
+                                )}
+                              >
+                                Extracted Text
+                              </button>
+                            </div>
+                          )}
+                          {pdfEmbedUrl && (
+                            <a
+                              href={pdfEmbedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 hover:underline"
+                            >
+                              Open PDF ↗
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {pdfEmbedUrl && pdfViewMode === "embed" ? (
+                        <iframe
+                          src={pdfEmbedUrl}
+                          title={selectedNode.name}
+                          className="w-full h-[540px] rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white"
+                        />
+                      ) : activeTextContent ? (
+                        <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-4 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto max-h-[520px] leading-relaxed whitespace-pre-wrap">
+                          {activeTextContent}
+                        </pre>
+                      ) : null}
+                    </div>
+                  ) : isDocx && activeTextContent ? (
+                    <div className="space-y-3">
+                      <div className="text-[11px] font-mono text-zinc-400">
+                        Rendered inline from {selectedNode.name} (word/document.xml)
+                      </div>
+                      <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50 p-5 text-xs sm:text-[13px] text-zinc-800 dark:text-zinc-200 leading-relaxed whitespace-pre-wrap max-h-[480px] overflow-y-auto">
+                        {activeTextContent}
+                      </div>
+                    </div>
+                  ) : activeTextContent !== undefined && activeTextContent !== null ? (
+                    <pre className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-4 text-xs font-mono text-zinc-800 dark:text-zinc-200 overflow-x-auto max-h-[480px] leading-relaxed whitespace-pre-wrap">
+                      {activeTextContent}
+                    </pre>
+                  ) : (
+                    <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/70 dark:bg-zinc-900/60 p-8 text-center space-y-3">
+                      <RiFileTextLine className="w-8 h-8 text-indigo-500 mx-auto" />
+                      <div className="text-xs font-mono font-semibold text-zinc-950 dark:text-white">
+                        {selectedNode.name}
+                      </div>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 max-w-md mx-auto">
+                        Binary dossier or reference asset ({formatBytes(selectedNode.sizeBytes)}) mounted read-only inside the Harbor sandbox environment.
+                      </p>
+                    </div>
+                  )}
+                </div>
             </>
           ) : (
             <div className="p-10 text-center text-xs font-mono text-zinc-400">

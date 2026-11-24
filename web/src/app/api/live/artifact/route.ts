@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const storageRoot = searchParams.get("storageRoot") as StorageRootId | null;
   const storagePath = searchParams.get("storagePath") || "";
+  const inline = searchParams.get("inline") === "1";
 
   if ((storageRoot !== "upstream" && storageRoot !== "workspace") || !storagePath) {
     return NextResponse.json(
@@ -63,12 +64,13 @@ export async function GET(req: NextRequest) {
   const contentType = MIME_MAP[ext] || "application/octet-stream";
   const fileName = path.basename(safe.absPath);
   const bytes = fs.readFileSync(safe.absPath);
+  const disp = inline ? "inline" : "attachment";
 
   return new NextResponse(bytes, {
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+      "Content-Disposition": `${disp}; filename*=UTF-8''${encodeURIComponent(fileName)}`,
       "Content-Length": String(bytes.length),
       "Cache-Control": "no-store",
     },
