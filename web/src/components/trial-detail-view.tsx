@@ -420,6 +420,13 @@ export function TrialDetailView({
                 <span className="font-mono font-semibold text-emerald-600 dark:text-emerald-400">
                   {scoreBadgeText} · {bundle.status}
                 </span>
+              ) : bundle.groupVerification ? (
+                <span
+                  title={bundle.groupVerification.note}
+                  className="font-mono font-semibold text-zinc-700 dark:text-zinc-300"
+                >
+                  Group-scored · {bundle.status}
+                </span>
               ) : (
                 <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-100">
                   {bundle.status}
@@ -1062,10 +1069,25 @@ export function TrialDetailView({
           {/* Summary Strip */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Primary Score</div>
-              <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-0.5">
-                {scoreBadgeText || bundle.status}
-              </div>
+              <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Case Score</div>
+              {scoreBadgeText ? (
+                <div className="text-2xl font-semibold text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-0.5">
+                  {scoreBadgeText}
+                </div>
+              ) : bundle.groupVerification ? (
+                <>
+                  <div className="text-base font-semibold text-zinc-700 dark:text-zinc-300 font-mono mt-1">
+                    Group-scored
+                  </div>
+                  <div className="text-[11px] text-zinc-400 mt-0.5">
+                    No per-case score
+                  </div>
+                </>
+              ) : (
+                <div className="text-2xl font-semibold text-zinc-700 dark:text-zinc-300 font-mono tabular-nums mt-0.5">
+                  {bundle.status}
+                </div>
+              )}
             </div>
             <div className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
               <div className="text-[11px] text-zinc-500 dark:text-zinc-400">Verification Status</div>
@@ -1093,7 +1115,10 @@ export function TrialDetailView({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-zinc-950 dark:text-white flex items-center gap-2">
                   <RiCheckDoubleLine className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  Verifier Evaluation Metrics
+                  <span>Verifier Evaluation Metrics</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 font-medium">
+                    This Case
+                  </span>
                 </span>
                 {bundle.primaryMetric && (
                   <span className="text-base font-semibold font-mono text-emerald-600 dark:text-emerald-400 tabular-nums">
@@ -1142,6 +1167,41 @@ export function TrialDetailView({
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* Group-Level Verifier Context (for benchmarks evaluated at subtask level without per-case scores) */}
+          {bundle.groupVerification && (
+            <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/40 p-5 space-y-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-zinc-950 dark:text-white">
+                  Subtask-Level Verifier Context
+                </span>
+                <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400">
+                  Not Per-Case · {bundle.groupVerification.scopeLabel}
+                </span>
+              </div>
+
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                {bundle.groupVerification.note} Inspect Agent Final Response vs Official Reference Answer below for this individual case.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {Object.values(bundle.groupVerification.metrics).map((m) => (
+                  <div
+                    key={m.key}
+                    className="rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <span className="text-zinc-700 dark:text-zinc-300 font-medium">
+                      {m.label}
+                    </span>
+                    <span className="font-mono font-semibold text-zinc-900 dark:text-zinc-100 tabular-nums shrink-0">
+                      {m.value}
+                      {m.unit === "%" ? "%" : m.unit === "pts" ? " pts" : ""}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

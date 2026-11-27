@@ -21,6 +21,7 @@ import type {
   StorageOverviewResponse,
   StorageRootId,
   StoredArtifactItem,
+  StoredGroupVerificationContext,
   StoredJobFile,
   StoredJobRecord,
   StoredMetricBadge,
@@ -1763,6 +1764,51 @@ export function queryStoredTrials(params: {
   };
 }
 
+function buildSubtaskGroupVerification(
+  taskName: string,
+  taskType: string,
+  job?: StoredJobRecord | null
+): StoredGroupVerificationContext | null {
+  const sub = job?.subtaskMetrics.find((s) => s.task === taskType);
+  if (!sub || sub.primaryValue === null) return null;
+
+  const sampleCount = sub.total || sub.completed || 0;
+  const scopeLabel = `Subtask ${taskType}${
+    sub.label && sub.label !== taskType ? ` · ${sub.label}` : ""
+  }${sampleCount ? ` (${sampleCount.toLocaleString()} cases)` : ""}`;
+
+  const metrics: Record<string, StoredMetricItem> = {
+    subtask_aggregate: {
+      key: "subtask_aggregate",
+      label: `${sub.primaryName || "Subtask"} Aggregate${
+        sampleCount ? ` (All ${sampleCount.toLocaleString()} cases)` : ""
+      }`,
+      value: sub.primaryValue,
+      unit: "%",
+      max: 100,
+      isPrimary: true,
+    },
+  };
+
+  if (typeof sub.metrics?.abstention_rate === "number") {
+    metrics.abstention_rate = {
+      key: "abstention_rate",
+      label: "Subtask Abstention Rate",
+      value: sub.metrics.abstention_rate,
+      unit: "%",
+      max: 100,
+    };
+  }
+
+  return {
+    granularity: "task_type",
+    scopeLabel,
+    sampleCount,
+    note: `Upstream ${formatTaskTitle(taskName)} evaluates all cases in this subtask together (granularity: task_type) and does not emit individual per-case scores.`,
+    metrics,
+  };
+}
+
 function hydrateLegacyIndexEntry(ref: {
   descriptor: InternalJobDescriptor;
   taskName: string;
@@ -1801,7 +1847,9 @@ function hydrateLegacyIndexEntry(ref: {
   }
 
   let score: number | null = null;
+  let scoreScope: "trial" | "group" | undefined = undefined;
   const unit = job.taskName === "legalworld" ? "pts" : "%";
+  let scoreLabel = unit === "pts" ? "Score" : "Metric";
   const rawMetrics = res?.evaluation?.metrics;
   if (rawMetrics && typeof rawMetrics === "object") {
     const norm: Record<string, number> = {};
@@ -1810,9 +1858,16 @@ function hydrateLegacyIndexEntry(ref: {
       norm[mk] = normalizeBenchmarkMetric(job.taskName, mk, mv);
     }
     score = selectPrimaryMetricForSubtask(job.taskName, norm).value;
-  } else if (job.taskName === "lawbench") {
-    const sub = job.subtaskMetrics.find((s) => s.task === taskType);
-    score = sub?.primaryValue ?? null;
+    if (score !== null && score !== undefined) {
+      scoreScope = "trial";
+    }
+  } else if (
+    (job.taskName === "lawbench" || job.taskName === "lexeval") &&
+    job.subtaskMetrics.some((s) => s.task === taskType)
+  ) {
+    score = null;
+    scoreLabel = "Subtask-only";
+    scoreScope = "group";
   }
 
   const usage = inter.dialog_history?.[0]?.metadata?.usage;
@@ -1850,7 +1905,8 @@ function hydrateLegacyIndexEntry(ref: {
     updatedAt: stRes ? stRes.mtime.toISOString() : job.updatedAt,
     score,
     scoreUnit: unit,
-    scoreLabel: unit === "pts" ? "Score" : "Metric",
+    scoreLabel,
+    scoreScope,
     steps: turns,
     toolCalls: 0,
     promptTokens,
@@ -1894,23 +1950,48 @@ function hydrateIndexEntry(ref: {
     0
   );
 
-  let score: number | null = job.primaryMetric?.value ?? null;
-  let scoreUnit = job.primaryMetric?.unit || "pts";
-  let scoreLabel = job.primaryMetric?.label || "Score";
+  let score: number | null = null;
+  let scoreUnit = "%";
+  let scoreLabel = "Score";
+  let scoreScope: "trial" | "group" | undefined = undefined;
 
-  if (job.taskName === "plawbench" && rawTrial.trial_id) {
+  if (job.taskName === "example") {
+    const reward = safeReadJson(
+      path.join(path.dirname(resAbs), ".internal/scoring/.internal/verifier/reward.json"),
+      32 * 1024
+    );
+    if (typeof reward?.legal_quality === "number") {
+      score = Number(reward.legal_quality);
+      scoreUnit = "pts";
+      scoreLabel = "Legal Quality";
+      scoreScope = "trial";
+    } else if (job.completedTrials <= 1 && job.primaryMetric) {
+      score = job.primaryMetric.value;
+      scoreUnit = job.primaryMetric.unit;
+      scoreLabel = job.primaryMetric.label;
+      scoreScope = "trial";
+    }
+  } else if (job.taskName === "plawbench" && rawTrial.trial_id) {
     const verTrials = readVerificationCached(path.join(absDir, "verification/verification.json"));
     const tm = verTrials[rawTrial.trial_id]?.metrics;
     if (typeof tm?.acc === "number") {
       score = Number((tm.acc * 100).toFixed(1));
       scoreUnit = "%";
       scoreLabel = "Acc";
+      scoreScope = "trial";
     }
-  } else if (job.taskName === "lawbench") {
-    const sub = job.subtaskMetrics.find((s) => s.task === taskType);
-    score = sub?.primaryValue ?? job.macroScore ?? null;
+  } else if (job.taskName === "lawbench" || job.taskName === "lexeval") {
+    score = null;
     scoreUnit = "%";
-    scoreLabel = "Task Avg";
+    scoreLabel = "Subtask-only";
+    scoreScope = "group";
+  } else if (rawTrial.trial_id) {
+    const verTrials = readVerificationCached(path.join(absDir, "verification/verification.json"));
+    const verEntry = verTrials[rawTrial.trial_id];
+    if (verEntry?.granularity === "native_group" && !verEntry?.metrics) {
+      scoreScope = "group";
+      scoreLabel = "Subtask-only";
+    }
   }
 
   const artifacts = extractResultArtifacts(res?.artifacts, absDir, storageRoot, baseRoot);
@@ -1955,6 +2036,7 @@ function hydrateIndexEntry(ref: {
     score,
     scoreUnit,
     scoreLabel,
+    scoreScope,
     steps: stepsArr.length,
     toolCalls: toolCallsCount || res?.usage?.tool_calls || 0,
     promptTokens,
@@ -2916,6 +2998,7 @@ function loadLegacyOrNativeTrialDetail(params: {
   // Normalize trial metrics & Verifier Judge
   const metrics: Record<string, StoredMetricItem> = {};
   let primaryMetric: StoredMetricBadge | null = null;
+  let groupVerification: StoredGroupVerificationContext | null = null;
   const rawMetrics = res.evaluation?.metrics;
   const unit = taskName === "legalworld" ? "pts" : "%";
 
@@ -2945,25 +3028,9 @@ function loadLegacyOrNativeTrialDetail(params: {
         max: 100,
       };
     }
-  } else if (taskName === "lawbench" && job) {
-    const sub = job.subtaskMetrics.find((s) => s.task === taskType);
-    if (sub && sub.primaryValue !== null) {
-      metrics.task_macro = {
-        key: "task_macro",
-        label: `Subtask ${taskType} Avg`,
-        value: sub.primaryValue,
-        unit: "%",
-        max: 100,
-        isPrimary: true,
-      };
-      primaryMetric = {
-        name: "task_macro",
-        label: `Subtask ${taskType} Avg`,
-        value: sub.primaryValue,
-        unit: "%",
-        max: 100,
-      };
-    }
+  }
+  if (Object.keys(metrics).length === 0 && (taskName === "lawbench" || taskName === "lexeval") && job) {
+    groupVerification = buildSubtaskGroupVerification(taskName, taskType, job);
   }
 
   // Extract structured verifierJudge for legacy plawbench / legalworld / simucourt
@@ -3051,7 +3118,19 @@ function loadLegacyOrNativeTrialDetail(params: {
   for (const cand of STATE.jobDescriptors.values()) {
     if (cand.job.taskName !== taskName) continue;
     const candLegacyDir = path.join(cand.absDir, "trials", taskType, sampleId);
-    if (canRead(path.join(candLegacyDir, "results.json"))) {
+    const sibResPath = path.join(candLegacyDir, "results.json");
+    if (canRead(sibResPath)) {
+      const sibRes = safeReadJson(sibResPath, 4 * 1024 * 1024);
+      let sibScore: number | null = null;
+      const sibRawMetrics = sibRes?.evaluation?.metrics;
+      if (sibRawMetrics && typeof sibRawMetrics === "object") {
+        const sibNorm: Record<string, number> = {};
+        for (const [mk, mv] of Object.entries(sibRawMetrics)) {
+          if (typeof mv !== "number" || Number.isNaN(mv) || IGNORED_METRIC_KEYS.has(mk)) continue;
+          sibNorm[mk] = normalizeBenchmarkMetric(taskName, mk, mv);
+        }
+        sibScore = selectPrimaryMetricForSubtask(taskName, sibNorm).value;
+      }
       const sibRelDir = path.posix.join(cand.relDir, "trials", taskType, sampleId);
       siblings.push({
         id: `${cand.storageRoot}:${sibRelDir}`,
@@ -3063,7 +3142,7 @@ function loadLegacyOrNativeTrialDetail(params: {
         agent: cand.job.agent,
         arm: cand.job.arm,
         armLabel: cand.job.armLabel,
-        score: cand.job.primaryMetric?.value ?? null,
+        score: sibScore,
         scoreUnit: cand.job.primaryMetric?.unit ?? "%",
       });
     }
@@ -3113,6 +3192,7 @@ function loadLegacyOrNativeTrialDetail(params: {
     stopReason: null,
     updatedAt: stRes ? stRes.mtime.toISOString() : null,
     primaryMetric,
+    groupVerification,
     metrics,
     answer: truncateText(answer, 6000),
     reference,
@@ -3240,14 +3320,23 @@ export function loadStoredTrialDetail(
       ? Number(rawTraj.final_metrics.total_cost_usd.toFixed(4))
       : null;
 
+  // Extract Harbor-structured trial verifier & agent_fs metadata
+  const verifierBase = path.join(trialAbsDir, ".internal/scoring/.internal/verifier");
+  const verifierChecksRaw = safeReadJson(path.join(verifierBase, "checks.json"), 64 * 1024);
+  const verifierRewardRaw = safeReadJson(path.join(verifierBase, "reward.json"), 32 * 1024);
+  const verifierJudgeRaw = safeReadJson(path.join(verifierBase, "judge.json"), 256 * 1024);
+
   // Build generic metrics dictionary from verification sources
   const metrics: Record<string, StoredMetricItem> = {};
   let primaryMetric: StoredMetricBadge | null = null;
+  let groupVerification: StoredGroupVerificationContext | null = null;
 
-  if (taskName === "example" && job) {
-    const sub = job.subtaskMetrics[0];
-    if (sub) {
-      for (const [k, v] of Object.entries(sub.metrics)) {
+  if (taskName === "example") {
+    const rewardSource =
+      verifierRewardRaw && typeof verifierRewardRaw === "object" ? verifierRewardRaw : null;
+    if (rewardSource) {
+      for (const [k, v] of Object.entries(rewardSource)) {
+        if (typeof v !== "number" || Number.isNaN(v) || k === "raw_legal_quality") continue;
         const meta = EXAMPLE_RUBRIC_META[k] || { label: k, max: 100 };
         metrics[k] = {
           key: k,
@@ -3266,6 +3355,30 @@ export function loadStoredTrialDetail(
           unit: "pts",
           max: 100,
         };
+      }
+    } else if (job && job.completedTrials <= 1) {
+      const sub = job.subtaskMetrics[0];
+      if (sub) {
+        for (const [k, v] of Object.entries(sub.metrics)) {
+          const meta = EXAMPLE_RUBRIC_META[k] || { label: k, max: 100 };
+          metrics[k] = {
+            key: k,
+            label: meta.label,
+            value: v,
+            unit: k === "submission_valid" ? "flag" : "pts",
+            max: meta.max,
+            isPrimary: k === "legal_quality",
+          };
+        }
+        if (typeof metrics.legal_quality?.value === "number") {
+          primaryMetric = {
+            name: "legal_quality",
+            label: "Legal Quality",
+            value: metrics.legal_quality.value,
+            unit: "pts",
+            max: 100,
+          };
+        }
       }
     }
   } else if (taskName === "plawbench" && res?.trial_id) {
@@ -3295,32 +3408,12 @@ export function loadStoredTrialDetail(
       }
     }
   } else if (taskName === "lawbench" && job) {
-    const sub = job.subtaskMetrics.find((s) => s.task === taskType);
-    if (sub && sub.primaryValue !== null) {
-      metrics.task_macro = {
-        key: "task_macro",
-        label: `Subtask ${taskType} Avg`,
-        value: sub.primaryValue,
-        unit: "%",
-        max: 100,
-        isPrimary: true,
-      };
-      if (typeof sub.metrics.abstention_rate === "number") {
-        metrics.abstention_rate = {
-          key: "abstention_rate",
-          label: "Abstention Rate",
-          value: sub.metrics.abstention_rate,
-          unit: "%",
-          max: 100,
-        };
-      }
-      primaryMetric = {
-        name: "task_macro",
-        label: `Subtask ${taskType} Avg`,
-        value: sub.primaryValue,
-        unit: "%",
-        max: 100,
-      };
+    groupVerification = buildSubtaskGroupVerification(taskName, taskType, job);
+  } else if (res?.trial_id && job) {
+    const verTrials = readVerificationCached(path.join(jobAbsDir, "verification/verification.json"));
+    const verEntry = verTrials[res.trial_id];
+    if (verEntry?.granularity === "native_group" && !verEntry?.metrics) {
+      groupVerification = buildSubtaskGroupVerification(taskName, taskType, job);
     }
   }
 
@@ -3346,7 +3439,31 @@ export function loadStoredTrialDetail(
     });
     if (!match?.result) continue;
     const sibRelDir = path.posix.join(cand.relDir, path.posix.dirname(match.result));
-    if (!canRead(path.join(cand.absDir, path.dirname(match.result), "trajectory.json"))) continue;
+    const sibTrialAbsDir = path.join(cand.absDir, path.dirname(match.result));
+    if (!canRead(path.join(sibTrialAbsDir, "trajectory.json"))) continue;
+
+    let sibScore: number | null = null;
+    let sibUnit = cand.job.primaryMetric?.unit ?? (taskName === "example" ? "pts" : "%");
+    if (taskName === "plawbench" && match.trial_id) {
+      const verTrials = readVerificationCached(path.join(cand.absDir, "verification/verification.json"));
+      const acc = verTrials[match.trial_id]?.metrics?.acc;
+      sibScore = typeof acc === "number" ? Number((acc * 100).toFixed(1)) : null;
+      sibUnit = "%";
+    } else if (taskName === "example") {
+      const sibReward = safeReadJson(
+        path.join(sibTrialAbsDir, ".internal/scoring/.internal/verifier/reward.json"),
+        32 * 1024
+      );
+      if (typeof sibReward?.legal_quality === "number") {
+        sibScore = Number(sibReward.legal_quality);
+      } else if (cand.job.completedTrials <= 1) {
+        sibScore = cand.job.primaryMetric?.value ?? null;
+      }
+      sibUnit = "pts";
+    } else {
+      sibScore = null;
+    }
+
     siblings.push({
       id: `${cand.storageRoot}:${sibRelDir}`,
       storageRoot: cand.storageRoot,
@@ -3357,8 +3474,8 @@ export function loadStoredTrialDetail(
       agent: cand.job.agent,
       arm: cand.job.arm,
       armLabel: cand.job.armLabel,
-      score: cand.job.primaryMetric?.value ?? null,
-      scoreUnit: cand.job.primaryMetric?.unit ?? "pts",
+      score: sibScore,
+      scoreUnit: sibUnit,
     });
   }
 
@@ -3377,12 +3494,6 @@ export function loadStoredTrialDetail(
         usage: res.usage,
       }
     : null;
-
-  // Extract Harbor-structured trial verifier & agent_fs metadata
-  const verifierBase = path.join(trialAbsDir, ".internal/scoring/.internal/verifier");
-  const verifierChecksRaw = safeReadJson(path.join(verifierBase, "checks.json"), 64 * 1024);
-  const verifierRewardRaw = safeReadJson(path.join(verifierBase, "reward.json"), 32 * 1024);
-  const verifierJudgeRaw = safeReadJson(path.join(verifierBase, "judge.json"), 256 * 1024);
 
   const skillsDir = path.join(trialAbsDir, ".internal/agent_fs/skills");
   const mountedSkills =
@@ -3486,6 +3597,7 @@ export function loadStoredTrialDetail(
     stopReason: res?.stop_reason || null,
     updatedAt: stRes ? stRes.mtime.toISOString() : null,
     primaryMetric,
+    groupVerification,
     metrics,
     answer: truncateText(res?.answer, 6000),
     reference,

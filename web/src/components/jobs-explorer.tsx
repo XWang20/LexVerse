@@ -1398,10 +1398,24 @@ export function JobsExplorer({
                               ).toFixed(1)}
                               k
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                              {tr.score !== null && tr.score !== undefined
-                                ? `${tr.score}${tr.scoreUnit === "%" ? "%" : ` ${tr.scoreUnit}`}`
-                                : tr.status}
+                            <td className="py-2.5 px-3 text-right font-mono">
+                              {tr.score !== null && tr.score !== undefined ? (
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  {tr.score}
+                                  {tr.scoreUnit === "%" ? "%" : ` ${tr.scoreUnit}`}
+                                </span>
+                              ) : tr.scoreScope === "group" ? (
+                                <span
+                                  title="Evaluated at subtask group level — no individual per-case score"
+                                  className="text-[11px] text-zinc-400 font-normal"
+                                >
+                                  Group-scored
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-zinc-400 font-normal">
+                                  {tr.status}
+                                </span>
+                              )}
                             </td>
                             <td className="py-2.5 px-4 text-right">
                               <span className="lv-btn-tertiary inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap">

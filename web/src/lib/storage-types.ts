@@ -103,6 +103,7 @@ export interface StoredTrialIndexEntry {
   score: number | null;
   scoreUnit: string;
   scoreLabel: string;
+  scoreScope?: "trial" | "group";
   steps: number | null;
   toolCalls: number | null;
   promptTokens: number | null;
@@ -156,6 +157,14 @@ export interface StoredSiblingTrial {
   scoreUnit?: string;
 }
 
+export interface StoredGroupVerificationContext {
+  granularity: "task_type";
+  scopeLabel: string;
+  sampleCount: number;
+  note: string;
+  metrics: Record<string, StoredMetricItem>;
+}
+
 export interface StoredTrialDetail {
   id: string;
   trialId: string;
@@ -182,6 +191,7 @@ export interface StoredTrialDetail {
   stopReason: string | null;
   updatedAt: string | null;
   primaryMetric: StoredMetricBadge | null;
+  groupVerification?: StoredGroupVerificationContext | null;
   metrics: Record<string, StoredMetricItem>;
   answer: string;
   reference: string;

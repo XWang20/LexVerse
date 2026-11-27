@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   ResponsiveContainer,
   BarChart,
@@ -19,8 +19,14 @@ import {
   RiBarChartGroupedLine,
 } from "@remixicon/react";
 import { cn } from "@/lib/utils";
-import { SlidingPill } from "./magic-ui";
 import type { ResultsSummaryData } from "@/lib/storage-types";
+
+function formatAblationArmLabel(arm: string, fallback: string): string {
+  if (arm === "static") return "Static Prompt";
+  if (arm === "vanilla") return "Agent (w/o Capabilities)";
+  if (arm === "vanilla_cap") return "Agent + Capabilities";
+  return fallback;
+}
 
 /**
  * Capability Ablation Gain Card computed directly from stored ResultsSummaryData
@@ -30,190 +36,140 @@ export function MebiusAblationCard({
 }: {
   resultsSummary?: ResultsSummaryData | null;
 }) {
-  const groups = resultsSummary?.modeComparisons || [];
-  const [selectedId, setSelectedId] = useState<string>("plawbench-weighted");
-
-  useEffect(() => {
-    if (groups.length && !groups.some((g) => g.id === selectedId)) {
-      setSelectedId(groups[0].id);
-    }
-  }, [groups, selectedId]);
-
-  const activeGroup = useMemo(() => {
-    return groups.find((g) => g.id === selectedId) || groups[0] || null;
-  }, [groups, selectedId]);
-
-  const activeBars = useMemo(() => {
-    if (!activeGroup) return [];
-    return activeGroup.arms.map((a, idx) => ({
-      label:
-        a.arm === "static"
-          ? "Static"
-          : a.arm === "vanilla"
-          ? "Vanilla"
-          : a.arm === "vanilla_cap"
-          ? "V + Cap"
-          : a.arm === "base"
-          ? "Base"
-          : "Full Cap",
-      v: a.value,
-      tier:
-        idx === activeGroup.arms.length - 1
-          ? "emerald"
-          : idx > 0
-          ? "indigo"
-          : "muted",
-    }));
-  }, [activeGroup]);
-
-  const topArm = activeGroup?.arms[activeGroup.arms.length - 1];
-  const topDelta = topArm?.delta;
+  const macroGroups = useMemo(() => {
+    const groups = resultsSummary?.modeComparisons || [];
+    const plawbenchMacro = groups.find((g) => g.id === "plawbench-macro");
+    const lawbenchMacro = groups.find((g) => g.id === "lawbench-macro");
+    return [plawbenchMacro, lawbenchMacro].filter(
+      (g): g is NonNullable<typeof g> => Boolean(g)
+    );
+  }, [resultsSummary]);
 
   return (
     <div className="rounded-2xl border border-zinc-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-[0_1px_2px_rgba(0,0,0,0.03)] p-6 flex flex-col justify-between h-full">
-      <div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-6 h-6 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 grid place-items-center">
-              <RiPieChart2Line className="w-3.5 h-3.5" />
-            </span>
-            <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-              Mode &amp; Capability Comparison
-            </span>
-          </div>
-          <span className="text-[11px] font-mono text-zinc-400">From Storage</span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="w-6 h-6 rounded-full bg-emerald-500/12 text-emerald-600 dark:text-emerald-400 grid place-items-center">
+            <RiPieChart2Line className="w-3.5 h-3.5" />
+          </span>
+          <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+            Mode &amp; Capability Comparison
+          </span>
         </div>
+        <span className="text-[11px] font-mono text-zinc-400">
+          Macro Avg · From Storage
+        </span>
+      </div>
 
-        {activeGroup ? (
-          <>
-            <div className="flex items-baseline gap-2.5 mt-3">
-              <span className="text-3xl font-semibold tracking-tight text-zinc-950 dark:text-white tabular-nums">
-                {topArm?.value.toFixed(2)}
-                {activeGroup.unit === "%" ? "%" : ""}
-              </span>
-              {topDelta !== null && topDelta !== undefined && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-400">
-                  {topDelta >= 0 ? `↗ +${topDelta}` : `↘ ${topDelta}`}
-                  {activeGroup.unit === "%" ? "%" : " pts"}
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-              {activeGroup.subtitle}
-            </p>
-          </>
-        ) : (
-          <div className="space-y-2.5 py-4" aria-busy="true">
-            <div className="lv-skeleton h-8 w-28 rounded-lg" />
-            <div className="lv-skeleton h-3 w-48 rounded" />
-          </div>
-        )}
+      {macroGroups.length > 0 ? (
+        <div className="flex-1 flex flex-col justify-between gap-3.5 mt-4">
+          {macroGroups.map((group) => {
+            const topArm = group.arms[group.arms.length - 1];
+            const topDelta = topArm?.delta;
+            const sampleCount = group.arms[0]?.sampleCount;
+            const subtitle =
+              group.id === "plawbench-macro"
+                ? sampleCount
+                  ? `3-Task Macro · ${sampleCount.toLocaleString()} cases`
+                  : "3-Task Macro"
+                : sampleCount
+                ? `20-Task Macro · ${sampleCount.toLocaleString()} items`
+                : "20-Task Macro";
 
-        {groups.length > 0 && (
-          <div className="flex flex-wrap gap-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-800 p-1 mt-4 text-[11px] font-medium">
-            {groups.slice(0, 4).map((g) => {
-              const active = activeGroup?.id === g.id;
-              return (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setSelectedId(g.id)}
-                  className={cn(
-                    "relative flex-1 py-1.5 px-2 rounded-xl transition cursor-pointer whitespace-nowrap",
-                    active
-                      ? "text-zinc-950 dark:text-white font-semibold"
-                      : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+            return (
+              <div
+                key={group.id}
+                className="rounded-xl border border-zinc-200/75 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/40 p-4 flex-1 flex flex-col justify-between"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-zinc-950 dark:text-white">
+                      {group.taskName === "plawbench" ? "PLawBench" : "LawBench"}
+                    </div>
+                    <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                      {subtitle}
+                    </div>
+                  </div>
+                  {topArm && (
+                    <div className="flex items-baseline gap-2 shrink-0">
+                      <span className="text-xl font-semibold tracking-tight text-zinc-950 dark:text-white tabular-nums">
+                        {topArm.value.toFixed(2)}%
+                      </span>
+                      {topDelta !== null && topDelta !== undefined && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 tabular-nums">
+                          {topDelta >= 0
+                            ? `↗ +${topDelta.toFixed(2)}%`
+                            : `↘ ${topDelta.toFixed(2)}%`}
+                        </span>
+                      )}
+                    </div>
                   )}
-                >
-                  {active && <SlidingPill layoutId="ablation-bench-pill" className="rounded-xl" />}
-                  <span className="relative z-10">
-                    {g.id === "plawbench-weighted"
-                      ? "PLawBench"
-                      : g.id === "plawbench-macro"
-                      ? "PLaw Macro"
-                      : g.id === "lawbench-macro"
-                      ? "LawBench"
-                      : "Example"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+                </div>
 
-        {activeGroup && (
-          <div className="space-y-2.5 mt-4">
-            {activeGroup.arms.map((arm, idx) => (
-              <div key={arm.arm} className="flex items-center justify-between text-xs">
-                <span className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400 truncate">
-                  <span
-                    className={cn(
-                      "w-2 h-2 rounded-full shrink-0",
-                      idx === activeGroup.arms.length - 1
-                        ? "bg-emerald-500"
-                        : idx > 0
-                        ? "bg-indigo-500"
-                        : "bg-zinc-400"
-                    )}
-                  />
-                  <span className="truncate">{arm.armLabel}</span>
-                </span>
-                <div className="flex items-center gap-3 tabular-nums shrink-0">
-                  <span className="font-semibold text-zinc-900 dark:text-zinc-100">
-                    {arm.value.toFixed(2)}
-                    {activeGroup.unit === "%" ? "%" : ""}
-                  </span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium w-16 text-right">
-                    {arm.delta === null
-                      ? "Baseline"
-                      : `${arm.delta >= 0 ? "+" : ""}${arm.delta}${activeGroup.unit === "%" ? "%" : ""}`}
-                  </span>
+                <div className="space-y-2 mt-3 pt-3 border-t border-zinc-200/60 dark:border-zinc-800/70">
+                  {group.arms.map((arm, idx) => {
+                    const isLast = idx === group.arms.length - 1;
+                    return (
+                      <div key={arm.arm} className="flex items-center justify-between text-xs gap-2">
+                        <span
+                          className={cn(
+                            "flex items-center gap-2 min-w-0 truncate",
+                            isLast
+                              ? "font-medium text-zinc-900 dark:text-zinc-100"
+                              : "text-zinc-600 dark:text-zinc-400"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "w-2 h-2 rounded-full shrink-0",
+                              isLast
+                                ? "bg-emerald-500"
+                                : idx > 0
+                                ? "bg-indigo-500"
+                                : "bg-zinc-400"
+                            )}
+                          />
+                          <span className="truncate">
+                            {formatAblationArmLabel(arm.arm, arm.armLabel)}
+                          </span>
+                        </span>
+                        <div className="flex items-center gap-3 tabular-nums shrink-0">
+                          <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                            {arm.value.toFixed(2)}%
+                          </span>
+                          {arm.delta === null ? (
+                            <span className="w-16 text-right text-zinc-400 font-normal">
+                              Baseline
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                "w-16 text-right font-medium",
+                                arm.delta < 0
+                                  ? "text-rose-500"
+                                  : "text-emerald-600 dark:text-emerald-400"
+                              )}
+                            >
+                              {arm.delta >= 0
+                                ? `+${arm.delta.toFixed(2)}%`
+                                : `${arm.delta.toFixed(2)}%`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="h-[145px] w-full mt-5 pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
-        {activeBars.length > 0 && (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={activeBars} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
-              <defs>
-                <linearGradient id="mebiusIndigoPill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" />
-                  <stop offset="100%" stopColor="#4f46e5" stopOpacity={0.85} />
-                </linearGradient>
-                <linearGradient id="mebiusEmeraldPill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" />
-                  <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: "#71717a" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis domain={[0, 100]} hide />
-              <Bar dataKey="v" radius={[8, 8, 8, 8]} maxBarSize={32} isAnimationActive={false}>
-                {activeBars.map((b, i) => (
-                  <Cell
-                    key={i}
-                    fill={
-                      b.tier === "emerald"
-                        ? "url(#mebiusEmeraldPill)"
-                        : b.tier === "indigo"
-                        ? "url(#mebiusIndigoPill)"
-                        : "var(--chart-bar-muted)"
-                    }
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col justify-between gap-3.5 mt-4" aria-busy="true">
+          <div className="lv-skeleton h-32 w-full rounded-xl" />
+          <div className="lv-skeleton h-32 w-full rounded-xl" />
+        </div>
+      )}
     </div>
   );
 }
